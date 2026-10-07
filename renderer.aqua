@@ -12,7 +12,7 @@
     賽道資料 = 新賽道資料;
     場景畫布 = 繪圖模組.createGraphics(繪圖模組.width, 繪圖模組.height, 繪圖模組.P3D);
     材質 = 繪圖模組.createShader(著色器模組.頂點著色器, 著色器模組.片段著色器);
-    印出("Marble Run renderer:", 圖形處理模組.Backend, " / Processing", 繪圖模組.backend);
+    印出("彈珠競速繪圖後端：", 圖形處理模組.Backend, "／Processing", 繪圖模組.backend);
 };
 變數 建立方塊 = 函式(位置, 尺寸, 旋轉, 色彩) {
     場景畫布.pushMatrix();

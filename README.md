@@ -1,106 +1,75 @@
-# Marble Run — Skyline Descent
+# 彈珠競速－高空速降
 
-A playable 3D time trial written entirely in Aquarius (`.aqua`). Roll a striped
-marble down an elevated, winding course, pass all six gates in order, and beat
-your best time. The gold gate is your next checkpoint; completed gates turn
-green. Falls respawn you at the last checkpoint and add three seconds.
-Finish in 24 seconds for gold or 38 seconds for silver. Best times last for the
-current session.
+完全以 Aquarius（`.aqua`）撰寫的 3D 計時競速遊戲。操控條紋彈珠沿著蜿蜒的高架賽道向下滾動，依序通過六道檢查門，挑戰自己的最佳紀錄。金色檢查門代表下一個檢查點，已通過的檢查門會變成綠色。墜落後會在上一個檢查點重生，並加罰 3 秒。
 
-## Gameplay preview
+在 24 秒內完賽可獲得金牌，38 秒內則可獲得銀牌。最佳紀錄僅保留至本次遊戲關閉。遊戲介面、操作提示與視窗標題皆使用繁體中文。
 
-![Marble Run gameplay showing the striped marble, elevated course, gold checkpoint gate, timer, and minimap](preview.png)
+## 遊戲預覽
 
-Rendering uses **wgpu through Processing P3D**, with a custom WGSL material,
-depth buffering, directional lighting, specular highlights, and distance fog.
-Processing supplies GPU canvas presentation and GLFW window/input integration.
-**Jolt Physics** simulates the marble and the oriented box track, including
-gravity, friction, rolling, rail collisions, and continuous collision detection.
-There are no external art assets or changes to the language runtime.
+![彈珠競速遊戲畫面：條紋彈珠、高架賽道、金色檢查門、計時器與小地圖](preview.png)
 
-## Run
+繪圖透過 **Processing P3D 使用 wgpu**，搭配自訂 WGSL 材質、深度緩衝、方向光、鏡面高光與距離霧效。Processing 負責 GPU 畫布呈現，以及 GLFW 視窗與輸入整合。
 
-Use a prebuilt **`AquariusDesktopVMREPL.exe`** distribution with its bundled
-graphics and physics dependencies, and a desktop with a compatible GPU driver.
-Keep the complete runtime distribution together. From this game's directory,
-run the entry script with the executable:
+**Jolt Physics** 負責模擬彈珠與具有旋轉角度的方塊賽道，包含重力、摩擦、滾動、護欄碰撞及連續碰撞偵測。遊戲不需要外部美術素材，也不需要修改語言執行環境。
+
+## 執行方式
+
+請使用已建置的 **`AquariusDesktopVMREPL.exe`** 發行套件，保留隨附的繪圖與物理相依套件，並確認電腦具有相容的 GPU 驅動程式。遊戲介面使用系統字型 **Microsoft JhengHei（微軟正黑體）**；請使用支援繁體中文字型的 Windows 執行環境。
+
+請將完整執行環境放在同一個目錄中。在遊戲目錄下，以執行檔啟動入口腳本：
 
 ```powershell
-# If the executable is on PATH:
+# 執行檔已加入 PATH 時：
 AquariusDesktopVMREPL.exe .\main.aqua
 
-# Or specify its full path:
+# 或指定執行檔的完整路徑：
 & 'C:\Aquarius\AquariusDesktopVMREPL.exe' .\main.aqua
 ```
 
-Replace the example path with your executable's location. You can also use the
-included launcher, which locates `main.aqua` relative to itself:
+請將範例路徑替換成實際的執行檔位置。腳本匯入路徑以各腳本所在目錄為基準，因此也可以指定 `main.aqua` 的絕對路徑，從其他工作目錄啟動。
 
-```powershell
-.\run.ps1                         # Uses AquariusDesktopVMREPL.exe on PATH
-.\run.ps1 -VmPath 'C:\Aquarius\AquariusDesktopVMREPL.exe'
-```
+## 操作方式
 
-Script imports resolve relative to each script, so an absolute path to
-`main.aqua` also lets you launch from another working directory.
-
-## Controls
-
-| Key | Action |
+| 按鍵 | 功能 |
 | --- | --- |
-| WASD / arrow keys | Steer in world X/Z: W moves down the course, D moves right |
-| Space (hold) | Brake horizontal movement |
-| J | Jump when supported by the track |
-| R | Return to the last checkpoint, adding 3 seconds |
-| Enter | Restart the run; retain the session best |
-| P | Pause / resume physics and the timer |
-| C | Switch follow / overview camera |
-| Mouse wheel | Adjust follow camera distance |
-| Esc / close window | Quit |
+| WASD／方向鍵 | 沿世界座標的 X／Z 軸轉向：W 朝賽道下坡方向移動，D 向右移動 |
+| 空白鍵（按住） | 減緩水平移動速度 |
+| J | 彈珠位於賽道上時跳躍 |
+| R | 回到上一個檢查點，並加罰 3 秒 |
+| Enter | 重新開始，保留本次遊戲的最佳紀錄 |
+| P | 暫停／繼續物理模擬與計時 |
+| C | 切換跟隨／俯瞰鏡頭 |
+| 滑鼠滾輪 | 調整跟隨鏡頭距離 |
+| Esc／關閉視窗 | 離開遊戲 |
 
-Press W to start the timer and launch. Gravity supplies most of the downhill
-speed; brake before the unrailed bends and steer toward the highlighted gate.
-The overview camera and minimap show the whole route. Steering directions remain
-world aligned in both camera modes. The camera and HUD respond to window resizing
-and display pixel density.
+按 W 或上方向鍵出發並開始計時。下坡速度主要來自重力；進入沒有護欄的彎道前先煞車，並朝醒目的金色檢查門前進。俯瞰鏡頭與小地圖可查看完整路線。兩種鏡頭模式的轉向方向都以世界座標為準。鏡頭與遊戲介面會隨視窗大小及顯示器像素密度調整。
 
-## Scripts
+## 腳本說明
 
-| Script | Responsibility |
+| 腳本 | 職責 |
 | --- | --- |
-| `main.aqua` | Composition, sketch lifecycle, clock, and event wiring |
-| `config.aqua` | Course nodes, dimensions, physics tuning, and medal targets |
-| `math3d.aqua` | Vector math and matching quaternion/matrix transforms |
-| `track.aqua` | Shared floor, rail, support, and checkpoint definitions |
-| `physics.aqua` | Jolt ownership, fixed updates, controls, respawns, and scoring |
-| `input.aqua` | Held-key input and normalized diagonal steering |
-| `camera.aqua` | Smoothed follow view, overview, and zoom |
-| `shaders.aqua` | WGSL vertex and fragment programs |
-| `renderer.aqua` | GPU canvas, track geometry, checkpoints, and rolling marble |
-| `hud.aqua` | Timer, progress, minimap, controls, pause, and result panels |
+| `main.aqua` | 模組整合、繪圖生命週期、時鐘與事件連接 |
+| `config.aqua` | 賽道節點、尺寸、物理參數與獎牌目標時間 |
+| `math3d.aqua` | 向量運算，以及對應的四元數與矩陣轉換 |
+| `track.aqua` | 共用的地板、護欄、支柱與檢查點定義 |
+| `physics.aqua` | Jolt 資源管理、固定時間更新、操控、重生與成績計算 |
+| `input.aqua` | 持續按鍵輸入與斜向轉向的正規化 |
+| `camera.aqua` | 平滑跟隨視角、俯瞰視角與縮放 |
+| `shaders.aqua` | WGSL 頂點與片段著色器 |
+| `renderer.aqua` | GPU 畫布、賽道幾何、檢查點與滾動彈珠 |
+| `hud.aqua` | 計時、進度、小地圖、操作提示、暫停與結果面板 |
 
-Project-defined variables, function bindings, parameters, and shader variables
-use Traditional Chinese names. External runtime APIs and shader entry points
-retain the names required by Processing, Jolt, and WebGPU.
+專案自訂的變數、函式繫結、參數與著色器變數皆使用繁體中文名稱。外部執行環境 API 與著色器入口則保留 Processing、Jolt 及 WebGPU 所要求的名稱。
 
-Modify `config.aqua` to change the route or movement. Adjacent nodes create
-oriented ramps; broad landing pads bridge the corners. Collider and render
-geometry share positions, dimensions, and rotations. Arches, checker tiles, and
-the scenery grid are decorative. The ground under the elevated track is visual;
-falling below the recovery height triggers a respawn.
+修改 `config.aqua` 即可調整路線或移動參數。相鄰節點會建立具有旋轉角度的斜坡，寬大的平台則銜接各個轉角。碰撞體與繪圖幾何共用位置、尺寸及旋轉資料。拱門、棋盤格地磚與背景網格皆為裝飾。高架賽道下方的地面僅供顯示；彈珠落至回復高度以下時，就會觸發重生。
 
-Physics uses an accumulator at **120 Hz**, with position interpolation for
-rendering. Frame deltas are capped at 0.1 seconds / 12 updates to avoid catching
-up indefinitely after a long stall. The timer counts simulated time and respawn
-penalties. Braking applies drag; jump eligibility uses the oriented floor bounds,
-while Jolt owns all contact response. The finish freezes the completed run.
-Jolt is disposed on normal exit; the desktop host also releases native resources
-if a script or callback fails. Processing releases its window and GPU resources.
+物理模擬透過時間累加器以 **120 Hz** 更新，繪圖時則使用位置插值。每個畫格的時間差上限為 0.1 秒，最多執行 12 次更新，避免長時間停頓後無限追趕進度。計時器累計模擬時間與重生罰時。煞車透過阻力減速；是否能跳躍由旋轉後的地板範圍判定，所有碰撞反應則由 Jolt 處理。抵達終點後，該次挑戰即停止更新。
 
-## Compile a portable script bottle
+正常離開時會釋放 Jolt 資源；若腳本或回呼發生錯誤，桌面執行環境也會釋放原生資源。Processing 會釋放視窗與 GPU 資源。
 
-Package **every** script, with `main.aqua` first. From this game's directory,
-using the same prebuilt executable:
+## 編譯成可攜式腳本瓶（bottle）
+
+請打包**所有**腳本，並將 `main.aqua` 放在第一個。在遊戲目錄下，使用相同的預先建置執行檔：
 
 ```powershell
 $彈珠執行器 = 'C:\Aquarius\AquariusDesktopVMREPL.exe'
@@ -114,9 +83,8 @@ $彈珠腳本列表 = @('.\main.aqua') + @(
 & $彈珠執行器 .\marble_run.bottle
 ```
 
-The bottle includes the WGSL strings and needs no art files. Distribute it with
-the complete desktop VM and its native dependencies.
+腳本瓶包含 WGSL 字串，不需要美術素材檔案。發佈時，請一併提供完整的桌面 VM 與原生相依套件。
 
-## License
+## 授權
 
-This project is licensed under the [MIT License](LICENSE).
+本專案採用 [MIT 授權條款](LICENSE)。

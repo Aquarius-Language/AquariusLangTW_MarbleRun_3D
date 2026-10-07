@@ -21,7 +21,7 @@
 變數 前次時間 = 0.0d;
 變數 賽道資料 = 建立賽道();
 變數 設定場景 = 函式() {
-    繪圖模組.size(設定模組.視窗寬度, 設定模組.視窗高度, 繪圖模組.P2D, "Aquarius | Marble Run - Skyline Descent");
+    繪圖模組.size(設定模組.視窗寬度, 設定模組.視窗高度, 繪圖模組.P2D, "Aquarius｜彈珠競速－高空速降");
     繪圖模組.frameRate(60);
     初始化物理(賽道資料); 初始化渲染(賽道資料); 初始化介面(賽道資料);
     繪圖模組.on("keyPressed", 函式() {
@@ -33,7 +33,7 @@
     });
     繪圖模組.on("mouseWheel", 函式() { 縮放鏡頭(繪圖模組.wheelCount); });
     前次時間 = 繪圖模組.millis()/1000.0d;
-    印出("Steer: WASD/arrows | Brake: Space | Jump: J | Respawn: R | Restart: Enter");
+    印出("轉向：WASD／方向鍵｜煞車：空白鍵｜跳躍：J｜重生：R｜重新開始：Enter");
 };
 變數 繪製畫面 = 函式() {
     變數 目前時間 = 繪圖模組.millis()/1000.0d;
