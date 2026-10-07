@@ -7,6 +7,10 @@ green. Falls respawn you at the last checkpoint and add three seconds.
 Finish in 24 seconds for gold or 38 seconds for silver. Best times last for the
 current session.
 
+## Gameplay preview
+
+![Marble Run gameplay showing the striped marble, elevated course, gold checkpoint gate, timer, and minimap](preview.png)
+
 Rendering uses **wgpu through Processing P3D**, with a custom WGSL material,
 depth buffering, directional lighting, specular highlights, and distance fog.
 Processing supplies GPU canvas presentation and GLFW window/input integration.
@@ -16,23 +20,29 @@ There are no external art assets or changes to the language runtime.
 
 ## Run
 
-Requires .NET 8 SDK, a desktop with a compatible GPU driver, and the repository's
-native graphics bridge. From the repository root, build the bridge if it has not
-already been built, then launch:
+Use a prebuilt **`AquariusDesktopVMREPL.exe`** distribution with its bundled
+graphics and physics dependencies, and a desktop with a compatible GPU driver.
+Keep the complete runtime distribution together. From this game's directory,
+run the entry script with the executable:
 
 ```powershell
-./native/build.ps1
-./marble_run/run.ps1
-# Or:
-dotnet run --project AquariusDesktopVMREPL -c Release -- marble_run/main.aqua
+# If the executable is on PATH:
+AquariusDesktopVMREPL.exe .\main.aqua
+
+# Or specify its full path:
+& 'C:\Aquarius\AquariusDesktopVMREPL.exe' .\main.aqua
 ```
 
-NuGet restores wgpu-native and Jolt automatically. Keep the native runtime files
-beside the desktop VM when distributing it. The bridge build requires CMake and
-Visual Studio C++ tools on Windows; other platforms can use the native CMake
-workflow in [the native guide](../native/README.md). A built VM can execute
-`main.aqua` directly. Script imports resolve relative to each script, so launching
-from another working directory also works.
+Replace the example path with your executable's location. You can also use the
+included launcher, which locates `main.aqua` relative to itself:
+
+```powershell
+.\run.ps1                         # Uses AquariusDesktopVMREPL.exe on PATH
+.\run.ps1 -VmPath 'C:\Aquarius\AquariusDesktopVMREPL.exe'
+```
+
+Script imports resolve relative to each script, so an absolute path to
+`main.aqua` also lets you launch from another working directory.
 
 ## Controls
 
@@ -85,18 +95,24 @@ if a script or callback fails. Processing releases its window and GPU resources.
 
 ## Compile a portable script bottle
 
-Package **every** script, with `main.aqua` first. From the repository root:
+Package **every** script, with `main.aqua` first. From this game's directory,
+using the same prebuilt executable:
 
 ```powershell
-$marbleScripts = @('marble_run/main.aqua') + @(
-    Get-ChildItem marble_run -Filter *.aqua |
+$marbleVm = 'C:\Aquarius\AquariusDesktopVMREPL.exe'
+$marbleScripts = @('.\main.aqua') + @(
+    Get-ChildItem . -Filter *.aqua |
     Where-Object Name -ne 'main.aqua' |
     Sort-Object Name |
     ForEach-Object FullName
 )
-dotnet run --project AquariusDesktopVMREPL -c Release -- -c --root marble_run -o marble_run/marble_run.bottle @marbleScripts
-dotnet run --project AquariusDesktopVMREPL -c Release -- marble_run/marble_run.bottle
+& $marbleVm -c --root . -o .\marble_run.bottle @marbleScripts
+& $marbleVm .\marble_run.bottle
 ```
 
 The bottle includes the WGSL strings and needs no art files. Distribute it with
-the complete desktop VM and its native dependencies. No tests are included.
+the complete desktop VM and its native dependencies.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).

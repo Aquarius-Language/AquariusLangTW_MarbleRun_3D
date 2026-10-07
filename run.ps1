@@ -1,6 +1,9 @@
-# Launch from any working directory. dotnet restores the VM's native packages.
+param(
+    [string]$VmPath = 'AquariusDesktopVMREPL.exe'
+)
+
+# Launch from any working directory using a prebuilt desktop VM distribution.
 $ErrorActionPreference = 'Stop'
-$marbleVmProject = Join-Path $PSScriptRoot '..\AquariusDesktopVMREPL\AquariusDesktopVMREPL.csproj'
 $marbleEntry = Join-Path $PSScriptRoot 'main.aqua'
-& dotnet run --project $marbleVmProject -c Release -- $marbleEntry
+& $VmPath $marbleEntry
 exit $LASTEXITCODE
