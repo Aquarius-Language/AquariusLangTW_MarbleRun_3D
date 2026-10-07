@@ -1,0 +1,50 @@
+# Composition root: modules own the course, simulation, input, camera and drawing.
+變數 P = 匯入("Processing");
+變數 C = 匯入(目前工作目錄 + "/config.aqua");
+變數 Track = 匯入(目前工作目錄 + "/track.aqua");
+變數 Physics = 匯入(目前工作目錄 + "/physics.aqua");
+變數 Input = 匯入(目前工作目錄 + "/input.aqua");
+變數 Camera = 匯入(目前工作目錄 + "/camera.aqua");
+變數 Renderer = 匯入(目前工作目錄 + "/renderer.aqua");
+變數 Hud = 匯入(目前工作目錄 + "/hud.aqua");
+# Bind exported functions locally so arguments always use the caller's scope.
+變數 BuildTrack = Track.Build;
+變數 InitializePhysics = Physics.Initialize; 變數 Advance = Physics.Advance;
+變數 Snapshot = Physics.Snapshot; 變數 Respawn = Physics.Respawn;
+變數 Restart = Physics.Restart; 變數 QueueJump = Physics.QueueJump;
+變數 TogglePause = Physics.TogglePause; 變數 DisposePhysics = Physics.Dispose;
+變數 ReadInput = Input.Read;
+變數 UpdateCamera = Camera.Update; 變數 SnapCamera = Camera.Snap;
+變數 ToggleCamera = Camera.Toggle; 變數 ZoomCamera = Camera.Zoom;
+變數 InitializeRenderer = Renderer.Initialize; 變數 DrawScene = Renderer.Draw;
+變數 InitializeHud = Hud.Initialize; 變數 DrawHud = Hud.Draw;
+變數 PreviousTime = 0.0d;
+變數 Course = BuildTrack();
+變數 Setup = 函式() {
+    P.size(C.Width, C.Height, P.P2D, "Aquarius | Marble Run - Skyline Descent");
+    P.frameRate(60);
+    InitializePhysics(Course); InitializeRenderer(Course); InitializeHud(Course);
+    P.on("keyPressed", 函式() {
+        如果 (P.keyCode == 80) { TogglePause(); }
+        如果 (P.keyCode == 67) { ToggleCamera(); }
+        如果 (P.keyCode == 74) { QueueJump(); }
+        如果 (P.keyCode == 82) { Respawn(); SnapCamera(); }
+        如果 (P.keyCode == 257) { Restart(); SnapCamera(); }
+    });
+    P.on("mouseWheel", 函式() { ZoomCamera(P.wheelCount); });
+    PreviousTime = P.millis()/1000.0d;
+    印出("Steer: WASD/arrows | Brake: Space | Jump: J | Respawn: R | Restart: Enter");
+};
+變數 Draw = 函式() {
+    變數 now = P.millis()/1000.0d;
+    變數 dt = P.constrain(now-PreviousTime, 0, C.MaxFrameTime);
+    PreviousTime = now;
+    變數 input = ReadInput();
+    Advance(dt, input);
+    變數 state = Snapshot();
+    變數 camera = UpdateCamera(dt, state);
+    DrawScene(state, camera); DrawHud(state, camera);
+};
+P.run(Setup, Draw);
+DisposePhysics();
+真;

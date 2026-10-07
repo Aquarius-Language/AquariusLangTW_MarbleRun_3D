@@ -1,0 +1,131 @@
+變數 Jolt = 匯入("Jolt");
+變數 P = 匯入("Processing");
+變數 C = 匯入(目前工作目錄 + "/config.aqua");
+變數 M = 匯入(目前工作目錄 + "/math3d.aqua");
+變數 Sub = M.Sub; 變數 InverseRotate = M.InverseRotate;
+變數 World = 0;
+變數 Marble = 0;
+變數 Course = 0;
+變數 Checkpoint = 0;
+變數 Elapsed = 0.0d;
+變數 Penalty = 0.0d;
+變數 Falls = 0;
+變數 Finished = 假;
+變數 Paused = 假;
+變數 Started = 假;
+變數 Best = 0.0d;
+變數 Grounded = 假;
+變數 Accumulator = 0.0d;
+變數 JumpQueued = 假;
+變數 JumpCooldown = 0.0d;
+變數 Previous = [0, 0, 0];
+變數 Position = [0, 0, 0];
+
+變數 PlaceAtCheckpoint = 函式() {
+    變數 n = Course["nodes"][Checkpoint];
+    Position = [n[0], n[1]+C.Radius+0.22d, n[2]];
+    Previous = Position;
+    World.SetPosition(Marble, Position);
+    World.SetRotation(Marble, [0, 0, 0, 1]);
+    World.SetLinearVelocity(Marble, [0, 0, 0]);
+    World.SetAngularVelocity(Marble, [0, 0, 0]);
+    Accumulator = 0.0d; JumpQueued = 假; JumpCooldown = 0.3d;
+};
+變數 Restart = 函式() {
+    Checkpoint = 0; Elapsed = 0.0d; Penalty = 0.0d; Falls = 0;
+    Finished = 假; Paused = 假; Started = 假; Grounded = 假;
+    PlaceAtCheckpoint();
+};
+變數 Initialize = 函式(course) {
+    Course = course;
+    World = Jolt.CreateWorld([0, -9.81d, 0]);
+    變數 pieces = Course["pieces"];
+    迴圈 (變數 i = 0; i < 長度(pieces); i++) {
+        變數 piece = pieces[i]; 變數 size = piece["size"];
+        變數 body = World.CreateBox([size[0]/2, size[1]/2, size[2]/2], piece["position"], 0);
+        World.SetRotation(body, piece["rotation"]);
+        World.SetFriction(body, 0.45d);
+    }
+    Marble = World.CreateSphere(C.Radius, [0, 14, 22], C.Mass);
+    World.SetFriction(Marble, 0.55d); World.SetRestitution(Marble, 0.08d);
+    World.OptimizeBroadPhase();
+    Restart();
+};
+變數 Respawn = 函式() {
+    如果 (Finished) { 回傳 假; }
+    Falls++; Penalty += C.RespawnPenalty;
+    PlaceAtCheckpoint();
+    回傳 真;
+};
+變數 TogglePause = 函式() { 如果 (!Finished) { Paused = !Paused; Accumulator = 0.0d; } };
+變數 QueueJump = 函式() { 如果 (!Paused && !Finished) { JumpQueued = 真; } };
+# Approximate sphere support against the same oriented floors used by Jolt.
+# Contacts remain entirely Jolt's job; this only decides whether jumping is allowed.
+變數 OnFloor = 函式(position) {
+    變數 ramps = Course["ramps"];
+    迴圈 (變數 i = 0; i < 長度(ramps); i++) {
+        變數 ramp = ramps[i]; 變數 size = ramp["size"];
+        變數 local = InverseRotate(ramp["rotation"], Sub(position, ramp["position"]));
+        變數 clearance = local[1]-size[1]/2;
+        如果 (P.abs(local[0]) < size[0]/2 && P.abs(local[2]) < size[2]/2 &&
+            clearance > C.Radius-0.09d && clearance < C.Radius+0.12d) { 回傳 真; }
+    }
+    回傳 假;
+};
+變數 Advance = 函式(frameTime, input) {
+    如果 (Paused || Finished) { 回傳 真; }
+    如果 (input[0] != 0 || input[1] != 0 || JumpQueued) { Started = 真; }
+    Accumulator += P.min(frameTime, C.MaxFrameTime);
+    迴圈 (變數 ticks = 0; Accumulator >= C.Step && ticks < 12; ticks++) {
+        Accumulator -= C.Step;
+        Previous = Position;
+        Grounded = OnFloor(Position);
+        JumpCooldown = P.max(0, JumpCooldown-C.Step);
+        變數 velocity = World.GetLinearVelocity(Marble);
+        變數 drag = C.RollingDrag;
+        如果 (input[2]) { drag = C.BrakeDrag; }
+        World.AddForce(Marble, [input[0]*C.SteeringForce-velocity[0]*drag,
+            0, input[1]*C.SteeringForce-velocity[2]*drag]);
+        如果 (JumpQueued && Grounded && JumpCooldown <= 0) {
+            World.AddImpulse(Marble, [0, C.JumpImpulse, 0]); JumpCooldown = 0.45d;
+        }
+        # A key press is consumed once, even if it was made in mid-air.
+        JumpQueued = 假;
+        World.Step(C.Step, 1);
+        Position = World.GetPosition(Marble);
+        如果 (Started) { Elapsed += C.Step; }
+        變數 gates = Course["gates"];
+        如果 (Checkpoint < 長度(gates)) {
+            變數 gate = gates[Checkpoint];
+            變數 dx = Position[0]-gate[0]; 變數 dz = Position[2]-gate[2];
+            如果 (dx*dx+dz*dz < 2.0d*2.0d &&
+                Position[1] > gate[1]-0.3d && Position[1] < gate[1]+2.2d) {
+                Checkpoint++; Started = 真;
+                如果 (Checkpoint == 長度(gates)) {
+                    Finished = 真;
+                    變數 result = Elapsed+Penalty;
+                    如果 (Best == 0 || result < Best) { Best = result; }
+                    Accumulator = 0.0d;
+                    中斷;
+                }
+            }
+        }
+        變數 safeHeight = Course["nodes"][Checkpoint][1];
+        如果 (Position[1] < safeHeight-5 || P.abs(Position[0]) > 25 || Position[2] < -48 || Position[2] > 32) {
+            Respawn(); 中斷;
+        }
+    }
+    回傳 真;
+};
+變數 Snapshot = 函式() {
+    變數 alpha = P.constrain(Accumulator/C.Step, 0, 1);
+    如果 (Paused || Finished) { alpha = 1.0d; }
+    變數 visual = [P.lerp(Previous[0], Position[0], alpha),
+        P.lerp(Previous[1], Position[1], alpha), P.lerp(Previous[2], Position[2], alpha)];
+    變數 velocity = World.GetLinearVelocity(Marble);
+    回傳 {"position": visual, "rotation": World.GetRotation(Marble),
+        "speed": P.sqrt(velocity[0]*velocity[0]+velocity[2]*velocity[2]),
+        "checkpoint": Checkpoint, "elapsed": Elapsed+Penalty, "falls": Falls,
+        "finished": Finished, "paused": Paused, "started": Started, "best": Best};
+};
+變數 Dispose = 函式() { World.Dispose(); };

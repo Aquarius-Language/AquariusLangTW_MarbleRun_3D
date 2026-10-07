@@ -1,0 +1,11 @@
+變數 P = 匯入("Processing");
+變數 Read = 函式() {
+    變數 x = 0.0d; 變數 z = 0.0d;
+    如果 (P.keyDown(65) || P.keyDown(263)) { x -= 1; }
+    如果 (P.keyDown(68) || P.keyDown(262)) { x += 1; }
+    如果 (P.keyDown(87) || P.keyDown(265)) { z -= 1; }
+    如果 (P.keyDown(83) || P.keyDown(264)) { z += 1; }
+    變數 magnitude = P.sqrt(x*x+z*z);
+    如果 (magnitude > 1) { x = x/magnitude; z = z/magnitude; }
+    回傳 [x, z, P.keyDown(32)];
+};

@@ -1,0 +1,85 @@
+變數 P = 匯入("Processing");
+變數 GPU = 匯入("WGPU");
+變數 C = 匯入(目前工作目錄 + "/config.aqua");
+變數 M = 匯入(目前工作目錄 + "/math3d.aqua");
+變數 Shaders = 匯入(目前工作目錄 + "/shaders.aqua");
+變數 Matrix = M.Matrix;
+變數 Scene = 0;
+變數 Material = 0;
+變數 Course = 0;
+變數 Sky = C.Sky;
+變數 Initialize = 函式(course) {
+    Course = course;
+    Scene = P.createGraphics(P.width, P.height, P.P3D);
+    Material = P.createShader(Shaders.Vertex, Shaders.Fragment);
+    印出("Marble Run renderer:", GPU.Backend, " / Processing", P.backend);
+};
+變數 Box = 函式(position, size, rotation, color) {
+    Scene.pushMatrix();
+    Scene.translate(position[0], position[1], position[2]);
+    Scene.applyMatrix(Matrix(rotation));
+    Scene.fill(color[0], color[1], color[2]);
+    Scene.box(size[0], size[1], size[2]);
+    Scene.popMatrix();
+};
+變數 Gate = 函式(index, state) {
+    變數 node = Course["gates"][index];
+    變數 color = [39, 72, 88];
+    如果 (index < state["checkpoint"]) { color = [67, 178, 132]; }
+    如果 (index == state["checkpoint"]) { color = [255, 188, 71]; }
+    # These arches are visual checkpoint markers, with an open collision-free center.
+    迴圈 (變數 side = -1; side <= 1; side += 2) {
+        Box([node[0]+side*2.05d, node[1]+1.35d, node[2]],
+            [0.16d, 2.7d, 0.16d], [0, 0, 0, 1], color);
+    }
+    Box([node[0], node[1]+2.7d, node[2]], [4.26d, 0.16d, 0.16d], [0, 0, 0, 1], color);
+};
+變數 Draw = 函式(state, camera) {
+    # Resize only when needed; honor high-DPI framebuffer sizes.
+    如果 (Scene.width != P.width || Scene.height != P.height ||
+        Scene.pixelWidth != P.pixelWidth || Scene.pixelHeight != P.pixelHeight) {
+        Scene.resize(P.width, P.height, P.pixelWidth, P.pixelHeight);
+    }
+    變數 eye = camera["eye"]; 變數 target = camera["target"];
+    Scene.beginDraw();
+    Scene.background(Sky[0], Sky[1], Sky[2]); Scene.noStroke();
+    Scene.perspective(P.PI/3, P.width*1.0d/P.height, 0.08d, 160);
+    Scene.camera(eye[0], eye[1], eye[2], target[0], target[1], target[2], 0, 1, 0);
+    Scene.shader(Material);
+    Material.set("eye", [eye[0], eye[1], eye[2], 1]);
+    Material.set("marble", 0); Material.set("shine", 0.15d);
+    Box([0, -2.3d, -8], [64, 0.4d, 96], [0, 0, 0, 1], [17, 30, 46]);
+    # Inlaid grid below the elevated course provides scale and motion cues.
+    迴圈 (變數 x = -24; x <= 24; x += 4) {
+        Box([x, -2.08d, -8], [0.035d, 0.02d, 80], [0, 0, 0, 1], [28, 48, 64]);
+    }
+    迴圈 (變數 z = -44; z <= 28; z += 4) {
+        Box([0, -2.08d, z], [56, 0.02d, 0.035d], [0, 0, 0, 1], [28, 48, 64]);
+    }
+    變數 pieces = Course["pieces"];
+    迴圈 (變數 i = 0; i < 長度(pieces); i++) {
+        變數 piece = pieces[i];
+        Box(piece["position"], piece["size"], piece["rotation"], piece["color"]);
+    }
+    迴圈 (變數 i = 0; i < 長度(Course["gates"]); i++) { Gate(i, state); }
+    # Start chevron and finish checkerboard sit just above their platforms.
+    變數 start = Course["nodes"][0];
+    Box([start[0], start[1]+0.012d, start[2]], [2, 0.02d, 0.16d], [0, 0, 0, 1], [238, 245, 245]);
+    變數 finish = Course["nodes"][長度(Course["nodes"])-1];
+    迴圈 (變數 row = 0; row < 4; row++) {
+        迴圈 (變數 col = 0; col < 8; col++) {
+            變數 shade = 230; 變數 sum = row+col;
+            如果 (sum-(sum/2)*2 == 0) { shade = 30; }
+            Box([finish[0]-1.75d+col*0.5d, finish[1]+0.012d, finish[2]-0.75d+row*0.5d],
+                [0.49d, 0.02d, 0.49d], [0, 0, 0, 1], [shade, shade, shade]);
+        }
+    }
+    變數 position = state["position"];
+    Scene.pushMatrix(); Scene.translate(position[0], position[1], position[2]);
+    Scene.applyMatrix(Matrix(state["rotation"]));
+    Material.set("marble", 1); Material.set("shine", 0.9d);
+    Scene.fill(255, 117, 82); Scene.sphereDetail(28, 18); Scene.sphere(C.Radius);
+    Scene.popMatrix(); Scene.resetShader(); Scene.endDraw();
+    P.background(Sky[0], Sky[1], Sky[2]);
+    P.image(Scene, 0, 0, P.width, P.height);
+};

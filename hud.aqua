@@ -1,0 +1,90 @@
+變數 P = 匯入("Processing");
+變數 C = 匯入(目前工作目錄 + "/config.aqua");
+變數 Course = 0;
+變數 Initialize = 函式(course) {
+    Course = course;
+    P.textFont(P.createFont("sans-serif", 16));
+};
+變數 Panel = 函式(x, y, w, h) {
+    P.noStroke(); P.fill(12, 22, 36, 225); P.rect(x, y, w, h, 12);
+};
+變數 Label = 函式(value, x, y, size, color) {
+    P.fill(color[0], color[1], color[2]); P.textSize(size); P.text(value, x, y);
+};
+變數 White = [235, 242, 247];
+變數 Muted = [143, 164, 183];
+變數 Teal = [76, 213, 189];
+變數 Gold = [255, 190, 80];
+變數 Seconds = 函式(value) { 回傳 P.floor(value*100)/100.0d; };
+變數 Draw = 函式(state, camera) {
+    變數 scale = P.min(P.width*1.0d/C.Width, P.height*1.0d/C.Height);
+    P.pushMatrix();
+    P.translate((P.width-C.Width*scale)/2, (P.height-C.Height*scale)/2); P.scale(scale);
+    Panel(24, 24, 346, 96);
+    Label("MARBLE / RUN", 44, 61, 28, White);
+    Label("SKYLINE DESCENT", 45, 88, 12, Teal);
+    Label("wgpu + Jolt Physics", 45, 107, 11, Muted);
+    Panel(842, 24, 414, 96);
+    Label("TIME / S", 865, 49, 11, Muted);
+    Label(Seconds(state["elapsed"]), 863, 88, 30, White);
+    Label("SPEED / M/S", 1004, 49, 11, Muted);
+    Label(P.floor(state["speed"]*10)/10.0d, 1003, 88, 30, Teal);
+    Label("FALLS", 1155, 49, 11, Muted);
+    Label(state["falls"], 1155, 88, 30, Gold);
+    Panel(1104, 140, 152, 232);
+    Label("COURSE", 1120, 164, 12, Muted);
+    變數 nodes = Course["nodes"];
+    迴圈 (變數 i = 0; i < 長度(nodes)-1; i++) {
+        變數 a = nodes[i]; 變數 b = nodes[i+1];
+        P.stroke(51, 82, 101); P.strokeWeight(4);
+        P.line(1180+a[0]*7, 185+(22-a[2])*2.4d, 1180+b[0]*7, 185+(22-b[2])*2.4d);
+    }
+    P.noStroke();
+    迴圈 (變數 i = 0; i < 長度(nodes); i++) {
+        變數 node = nodes[i]; P.fill(62, 100, 122);
+        如果 (i <= state["checkpoint"]) { P.fill(76, 213, 189); }
+        P.circle(1180+node[0]*7, 185+(22-node[2])*2.4d, 8);
+    }
+    變數 position = state["position"];
+    P.fill(255, 126, 86);
+    P.circle(1180+P.constrain(position[0], -8, 8)*7, 185+(22-P.constrain(position[2], -40, 24))*2.4d, 10);
+    如果 (camera["overview"]) { Label("OVERVIEW", 1120, 353, 11, Gold); }
+    否則 { Label("FOLLOW CAM", 1120, 353, 11, Muted); }
+    Panel(24, 692, 1232, 84);
+    Label("WASD / ARROWS  steer     SPACE  brake     J  jump", 44, 722, 15, White);
+    Label("R  respawn (+3 s)     ENTER  restart     P  pause     C  camera     WHEEL  zoom     ESC  quit", 44, 751, 13, Muted);
+    變數 count = 長度(Course["gates"]);
+    Label("CHECKPOINTS", 28, 660, 11, Muted);
+    迴圈 (變數 i = 0; i < count; i++) {
+        P.fill(34, 54, 73); 如果 (i < state["checkpoint"]) { P.fill(76, 213, 189); }
+        P.rect(134+i*42, 645, 32, 17, 4);
+    }
+    如果 (state["best"] > 0) {
+        Label("SESSION BEST / S", 1055, 659, 11, Muted);
+        Label(Seconds(state["best"]), 1190, 659, 16, Teal);
+    }
+    如果 (!state["started"] && !state["finished"]) {
+        Panel(400, 142, 480, 96);
+        Label("ROLL THROUGH THE GOLD GATES", 424, 175, 20, White);
+        Label("Use W / UP to launch. Steer at each bend.", 424, 202, 14, Muted);
+        Label("Gravity drives the descent. Brake before turns.", 424, 222, 13, Teal);
+    }
+    如果 (state["paused"]) {
+        Panel(450, 306, 380, 116);
+        Label("PAUSED", 488, 351, 32, Gold);
+        Label("Press P to continue", 488, 390, 16, White);
+    }
+    如果 (state["finished"]) {
+        Panel(412, 262, 456, 242);
+        變數 medal = "FINISHER"; 變數 color = Teal;
+        如果 (state["elapsed"] <= C.GoldTime) { medal = "GOLD RUN"; color = Gold; }
+        否則如果 (state["elapsed"] <= C.SilverTime) { medal = "SILVER RUN"; color = White; }
+        Label("COURSE COMPLETE", 442, 305, 26, White);
+        Label(medal, 443, 343, 20, color);
+        Label("TIME INCLUDING FALL PENALTIES / S", 443, 373, 11, Muted);
+        Label(Seconds(state["elapsed"]), 443, 418, 38, color);
+        Label("Press ENTER to race again", 443, 458, 17, White);
+        Label("Gold: 24 s   /   Silver: 38 s", 443, 484, 12, Muted);
+    }
+    P.popMatrix();
+};

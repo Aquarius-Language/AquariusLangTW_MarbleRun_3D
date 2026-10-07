@@ -1,0 +1,22 @@
+變數 P = 匯入("Processing");
+變數 Eye = [0, 20, 34];
+變數 Target = [0, 12, 18];
+變數 Overview = 假;
+變數 Distance = 11.0d;
+變數 SnapNext = 真;
+變數 Toggle = 函式() { Overview = !Overview; SnapNext = 真; };
+變數 Snap = 函式() { SnapNext = 真; };
+變數 Zoom = 函式(amount) { Distance = P.constrain(Distance-amount, 7, 20); };
+變數 Update = 函式(dt, state) {
+    變數 position = state["position"];
+    變數 wantedEye = [position[0], position[1]+Distance*0.65d, position[2]+Distance];
+    變數 wantedTarget = [position[0], position[1]-0.2d, position[2]-3.0d];
+    如果 (Overview) { wantedEye = [32, 37, 40]; wantedTarget = [0, 6, -8]; }
+    變數 blend = 1-P.exp(-dt*7);
+    如果 (SnapNext) { blend = 1.0d; SnapNext = 假; }
+    迴圈 (變數 i = 0; i < 3; i++) {
+        Eye[i] = P.lerp(Eye[i], wantedEye[i], blend);
+        Target[i] = P.lerp(Target[i], wantedTarget[i], blend);
+    }
+    回傳 {"eye": Eye, "target": Target, "overview": Overview};
+};
