@@ -79,6 +79,10 @@ and display pixel density.
 | `renderer.aqua` | GPU canvas, track geometry, checkpoints, and rolling marble |
 | `hud.aqua` | Timer, progress, minimap, controls, pause, and result panels |
 
+Project-defined variables, function bindings, parameters, and shader variables
+use Traditional Chinese names. External runtime APIs and shader entry points
+retain the names required by Processing, Jolt, and WebGPU.
+
 Modify `config.aqua` to change the route or movement. Adjacent nodes create
 oriented ramps; broad landing pads bridge the corners. Collider and render
 geometry share positions, dimensions, and rotations. Arches, checker tiles, and
@@ -99,15 +103,15 @@ Package **every** script, with `main.aqua` first. From this game's directory,
 using the same prebuilt executable:
 
 ```powershell
-$marbleVm = 'C:\Aquarius\AquariusDesktopVMREPL.exe'
-$marbleScripts = @('.\main.aqua') + @(
+$彈珠執行器 = 'C:\Aquarius\AquariusDesktopVMREPL.exe'
+$彈珠腳本列表 = @('.\main.aqua') + @(
     Get-ChildItem . -Filter *.aqua |
     Where-Object Name -ne 'main.aqua' |
     Sort-Object Name |
     ForEach-Object FullName
 )
-& $marbleVm -c --root . -o .\marble_run.bottle @marbleScripts
-& $marbleVm .\marble_run.bottle
+& $彈珠執行器 -c --root . -o .\marble_run.bottle @彈珠腳本列表
+& $彈珠執行器 .\marble_run.bottle
 ```
 
 The bottle includes the WGSL strings and needs no art files. Distribute it with

@@ -1,90 +1,90 @@
-變數 P = 匯入("Processing");
-變數 C = 匯入(目前工作目錄 + "/config.aqua");
-變數 Course = 0;
-變數 Initialize = 函式(course) {
-    Course = course;
-    P.textFont(P.createFont("sans-serif", 16));
+變數 繪圖模組 = 匯入("Processing");
+變數 設定模組 = 匯入(目前工作目錄 + "/config.aqua");
+變數 賽道資料 = 0;
+變數 初始化 = 函式(新賽道資料) {
+    賽道資料 = 新賽道資料;
+    繪圖模組.textFont(繪圖模組.createFont("sans-serif", 16));
 };
-變數 Panel = 函式(x, y, w, h) {
-    P.noStroke(); P.fill(12, 22, 36, 225); P.rect(x, y, w, h, 12);
+變數 繪製面板 = 函式(橫向座標, 垂直座標, 面板寬度, 面板高度) {
+    繪圖模組.noStroke(); 繪圖模組.fill(12, 22, 36, 225); 繪圖模組.rect(橫向座標, 垂直座標, 面板寬度, 面板高度, 12);
 };
-變數 Label = 函式(value, x, y, size, color) {
-    P.fill(color[0], color[1], color[2]); P.textSize(size); P.text(value, x, y);
+變數 繪製文字 = 函式(數值, 橫向座標, 垂直座標, 字級, 色彩) {
+    繪圖模組.fill(色彩[0], 色彩[1], 色彩[2]); 繪圖模組.textSize(字級); 繪圖模組.text(數值, 橫向座標, 垂直座標);
 };
-變數 White = [235, 242, 247];
-變數 Muted = [143, 164, 183];
-變數 Teal = [76, 213, 189];
-變數 Gold = [255, 190, 80];
-變數 Seconds = 函式(value) { 回傳 P.floor(value*100)/100.0d; };
-變數 Draw = 函式(state, camera) {
-    變數 scale = P.min(P.width*1.0d/C.Width, P.height*1.0d/C.Height);
-    P.pushMatrix();
-    P.translate((P.width-C.Width*scale)/2, (P.height-C.Height*scale)/2); P.scale(scale);
-    Panel(24, 24, 346, 96);
-    Label("MARBLE / RUN", 44, 61, 28, White);
-    Label("SKYLINE DESCENT", 45, 88, 12, Teal);
-    Label("wgpu + Jolt Physics", 45, 107, 11, Muted);
-    Panel(842, 24, 414, 96);
-    Label("TIME / S", 865, 49, 11, Muted);
-    Label(Seconds(state["elapsed"]), 863, 88, 30, White);
-    Label("SPEED / M/S", 1004, 49, 11, Muted);
-    Label(P.floor(state["speed"]*10)/10.0d, 1003, 88, 30, Teal);
-    Label("FALLS", 1155, 49, 11, Muted);
-    Label(state["falls"], 1155, 88, 30, Gold);
-    Panel(1104, 140, 152, 232);
-    Label("COURSE", 1120, 164, 12, Muted);
-    變數 nodes = Course["nodes"];
-    迴圈 (變數 i = 0; i < 長度(nodes)-1; i++) {
-        變數 a = nodes[i]; 變數 b = nodes[i+1];
-        P.stroke(51, 82, 101); P.strokeWeight(4);
-        P.line(1180+a[0]*7, 185+(22-a[2])*2.4d, 1180+b[0]*7, 185+(22-b[2])*2.4d);
+變數 白色 = [235, 242, 247];
+變數 柔和色 = [143, 164, 183];
+變數 藍綠色 = [76, 213, 189];
+變數 金色 = [255, 190, 80];
+變數 取秒數 = 函式(數值) { 回傳 繪圖模組.floor(數值*100)/100.0d; };
+變數 繪製畫面 = 函式(狀態資料, 鏡頭資料) {
+    變數 介面縮放比例 = 繪圖模組.min(繪圖模組.width*1.0d/設定模組.視窗寬度, 繪圖模組.height*1.0d/設定模組.視窗高度);
+    繪圖模組.pushMatrix();
+    繪圖模組.translate((繪圖模組.width-設定模組.視窗寬度*介面縮放比例)/2, (繪圖模組.height-設定模組.視窗高度*介面縮放比例)/2); 繪圖模組.scale(介面縮放比例);
+    繪製面板(24, 24, 346, 96);
+    繪製文字("MARBLE / RUN", 44, 61, 28, 白色);
+    繪製文字("SKYLINE DESCENT", 45, 88, 12, 藍綠色);
+    繪製文字("wgpu + Jolt Physics", 45, 107, 11, 柔和色);
+    繪製面板(842, 24, 414, 96);
+    繪製文字("TIME / S", 865, 49, 11, 柔和色);
+    繪製文字(取秒數(狀態資料["elapsed"]), 863, 88, 30, 白色);
+    繪製文字("SPEED / M/S", 1004, 49, 11, 柔和色);
+    繪製文字(繪圖模組.floor(狀態資料["speed"]*10)/10.0d, 1003, 88, 30, 藍綠色);
+    繪製文字("FALLS", 1155, 49, 11, 柔和色);
+    繪製文字(狀態資料["falls"], 1155, 88, 30, 金色);
+    繪製面板(1104, 140, 152, 232);
+    繪製文字("COURSE", 1120, 164, 12, 柔和色);
+    變數 節點資料列表 = 賽道資料["nodes"];
+    迴圈 (變數 索引 = 0; 索引 < 長度(節點資料列表)-1; 索引++) {
+        變數 向量甲 = 節點資料列表[索引]; 變數 向量乙 = 節點資料列表[索引+1];
+        繪圖模組.stroke(51, 82, 101); 繪圖模組.strokeWeight(4);
+        繪圖模組.line(1180+向量甲[0]*7, 185+(22-向量甲[2])*2.4d, 1180+向量乙[0]*7, 185+(22-向量乙[2])*2.4d);
     }
-    P.noStroke();
-    迴圈 (變數 i = 0; i < 長度(nodes); i++) {
-        變數 node = nodes[i]; P.fill(62, 100, 122);
-        如果 (i <= state["checkpoint"]) { P.fill(76, 213, 189); }
-        P.circle(1180+node[0]*7, 185+(22-node[2])*2.4d, 8);
+    繪圖模組.noStroke();
+    迴圈 (變數 索引 = 0; 索引 < 長度(節點資料列表); 索引++) {
+        變數 節點資料 = 節點資料列表[索引]; 繪圖模組.fill(62, 100, 122);
+        如果 (索引 <= 狀態資料["checkpoint"]) { 繪圖模組.fill(76, 213, 189); }
+        繪圖模組.circle(1180+節點資料[0]*7, 185+(22-節點資料[2])*2.4d, 8);
     }
-    變數 position = state["position"];
-    P.fill(255, 126, 86);
-    P.circle(1180+P.constrain(position[0], -8, 8)*7, 185+(22-P.constrain(position[2], -40, 24))*2.4d, 10);
-    如果 (camera["overview"]) { Label("OVERVIEW", 1120, 353, 11, Gold); }
-    否則 { Label("FOLLOW CAM", 1120, 353, 11, Muted); }
-    Panel(24, 692, 1232, 84);
-    Label("WASD / ARROWS  steer     SPACE  brake     J  jump", 44, 722, 15, White);
-    Label("R  respawn (+3 s)     ENTER  restart     P  pause     C  camera     WHEEL  zoom     ESC  quit", 44, 751, 13, Muted);
-    變數 count = 長度(Course["gates"]);
-    Label("CHECKPOINTS", 28, 660, 11, Muted);
-    迴圈 (變數 i = 0; i < count; i++) {
-        P.fill(34, 54, 73); 如果 (i < state["checkpoint"]) { P.fill(76, 213, 189); }
-        P.rect(134+i*42, 645, 32, 17, 4);
+    變數 位置 = 狀態資料["position"];
+    繪圖模組.fill(255, 126, 86);
+    繪圖模組.circle(1180+繪圖模組.constrain(位置[0], -8, 8)*7, 185+(22-繪圖模組.constrain(位置[2], -40, 24))*2.4d, 10);
+    如果 (鏡頭資料["overview"]) { 繪製文字("OVERVIEW", 1120, 353, 11, 金色); }
+    否則 { 繪製文字("FOLLOW CAM", 1120, 353, 11, 柔和色); }
+    繪製面板(24, 692, 1232, 84);
+    繪製文字("WASD / ARROWS  steer     SPACE  brake     J  jump", 44, 722, 15, 白色);
+    繪製文字("R  respawn (+3 s)     ENTER  restart     P  pause     C  camera     WHEEL  zoom     ESC  quit", 44, 751, 13, 柔和色);
+    變數 檢查門數量 = 長度(賽道資料["gates"]);
+    繪製文字("CHECKPOINTS", 28, 660, 11, 柔和色);
+    迴圈 (變數 索引 = 0; 索引 < 檢查門數量; 索引++) {
+        繪圖模組.fill(34, 54, 73); 如果 (索引 < 狀態資料["checkpoint"]) { 繪圖模組.fill(76, 213, 189); }
+        繪圖模組.rect(134+索引*42, 645, 32, 17, 4);
     }
-    如果 (state["best"] > 0) {
-        Label("SESSION BEST / S", 1055, 659, 11, Muted);
-        Label(Seconds(state["best"]), 1190, 659, 16, Teal);
+    如果 (狀態資料["best"] > 0) {
+        繪製文字("SESSION BEST / S", 1055, 659, 11, 柔和色);
+        繪製文字(取秒數(狀態資料["best"]), 1190, 659, 16, 藍綠色);
     }
-    如果 (!state["started"] && !state["finished"]) {
-        Panel(400, 142, 480, 96);
-        Label("ROLL THROUGH THE GOLD GATES", 424, 175, 20, White);
-        Label("Use W / UP to launch. Steer at each bend.", 424, 202, 14, Muted);
-        Label("Gravity drives the descent. Brake before turns.", 424, 222, 13, Teal);
+    如果 (!狀態資料["started"] && !狀態資料["finished"]) {
+        繪製面板(400, 142, 480, 96);
+        繪製文字("ROLL THROUGH THE GOLD GATES", 424, 175, 20, 白色);
+        繪製文字("Use W / UP to launch. Steer at each bend.", 424, 202, 14, 柔和色);
+        繪製文字("Gravity drives the descent. Brake before turns.", 424, 222, 13, 藍綠色);
     }
-    如果 (state["paused"]) {
-        Panel(450, 306, 380, 116);
-        Label("PAUSED", 488, 351, 32, Gold);
-        Label("Press P to continue", 488, 390, 16, White);
+    如果 (狀態資料["paused"]) {
+        繪製面板(450, 306, 380, 116);
+        繪製文字("PAUSED", 488, 351, 32, 金色);
+        繪製文字("Press P to continue", 488, 390, 16, 白色);
     }
-    如果 (state["finished"]) {
-        Panel(412, 262, 456, 242);
-        變數 medal = "FINISHER"; 變數 color = Teal;
-        如果 (state["elapsed"] <= C.GoldTime) { medal = "GOLD RUN"; color = Gold; }
-        否則如果 (state["elapsed"] <= C.SilverTime) { medal = "SILVER RUN"; color = White; }
-        Label("COURSE COMPLETE", 442, 305, 26, White);
-        Label(medal, 443, 343, 20, color);
-        Label("TIME INCLUDING FALL PENALTIES / S", 443, 373, 11, Muted);
-        Label(Seconds(state["elapsed"]), 443, 418, 38, color);
-        Label("Press ENTER to race again", 443, 458, 17, White);
-        Label("Gold: 24 s   /   Silver: 38 s", 443, 484, 12, Muted);
+    如果 (狀態資料["finished"]) {
+        繪製面板(412, 262, 456, 242);
+        變數 獎牌名稱 = "FINISHER"; 變數 色彩 = 藍綠色;
+        如果 (狀態資料["elapsed"] <= 設定模組.金牌時間) { 獎牌名稱 = "GOLD RUN"; 色彩 = 金色; }
+        否則如果 (狀態資料["elapsed"] <= 設定模組.銀牌時間) { 獎牌名稱 = "SILVER RUN"; 色彩 = 白色; }
+        繪製文字("COURSE COMPLETE", 442, 305, 26, 白色);
+        繪製文字(獎牌名稱, 443, 343, 20, 色彩);
+        繪製文字("TIME INCLUDING FALL PENALTIES / S", 443, 373, 11, 柔和色);
+        繪製文字(取秒數(狀態資料["elapsed"]), 443, 418, 38, 色彩);
+        繪製文字("Press ENTER to race again", 443, 458, 17, 白色);
+        繪製文字("Gold: 24 s   /   Silver: 38 s", 443, 484, 12, 柔和色);
     }
-    P.popMatrix();
+    繪圖模組.popMatrix();
 };

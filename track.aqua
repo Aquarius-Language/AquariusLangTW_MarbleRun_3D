@@ -1,43 +1,43 @@
-變數 C = 匯入(目前工作目錄 + "/config.aqua");
-變數 M = 匯入(目前工作目錄 + "/math3d.aqua");
-變數 Add = M.Add; 變數 Sub = M.Sub; 變數 Scale = M.Scale;
-變數 Length = M.Length; 變數 Rotate = M.Rotate; 變數 Along = M.Along;
-變數 Identity = [0, 0, 0, 1];
-變數 Nodes = C.Nodes;
-變數 Colors = C.TrackColors;
-變數 Box = 函式(position, size, rotation, color) {
-    回傳 {"position": position, "size": size, "rotation": rotation, "color": color};
+變數 設定模組 = 匯入(目前工作目錄 + "/config.aqua");
+變數 數學模組 = 匯入(目前工作目錄 + "/math3d.aqua");
+變數 向量相加 = 數學模組.向量相加; 變數 向量相減 = 數學模組.向量相減; 變數 向量縮放 = 數學模組.向量縮放;
+變數 向量長度 = 數學模組.向量長度; 變數 旋轉向量 = 數學模組.旋轉向量; 變數 沿向量旋轉 = 數學模組.沿向量旋轉;
+變數 單位四元數 = [0, 0, 0, 1];
+變數 節點列表 = 設定模組.節點列表;
+變數 色彩列表 = 設定模組.賽道色彩;
+變數 建立方塊 = 函式(位置, 尺寸, 旋轉, 色彩) {
+    回傳 {"position": 位置, "size": 尺寸, "rotation": 旋轉, "color": 色彩};
 };
-變數 Build = 函式() {
-    變數 Pieces = []; 變數 Ramps = []; 變數 Gates = [];
-    迴圈 (變數 i = 0; i < 長度(Nodes)-1; i++) {
-        變數 a = Nodes[i]; 變數 b = Nodes[i+1];
-        變數 delta = Sub(b, a); 變數 distance = Length(delta); 變數 q = Along(delta);
-        變數 center = Scale(Add(a, b), 0.5d);
-        變數 colorIndex = i-(i/長度(Colors))*長度(Colors);
-        變數 color = Colors[colorIndex];
-        變數 floor = Box(Add(center, Rotate(q, [0, -C.TrackThickness/2, 0])),
-            [C.TrackWidth, C.TrackThickness, distance+0.3d], q, color);
-        Pieces = 加入(Pieces, floor);
-        Ramps = 加入(Ramps, floor);
+變數 建立 = 函式() {
+    變數 構件列表 = []; 變數 斜坡列表 = []; 變數 檢查門列表 = [];
+    迴圈 (變數 索引 = 0; 索引 < 長度(節點列表)-1; 索引++) {
+        變數 向量甲 = 節點列表[索引]; 變數 向量乙 = 節點列表[索引+1];
+        變數 差向量 = 向量相減(向量乙, 向量甲); 變數 距離 = 向量長度(差向量); 變數 四元數 = 沿向量旋轉(差向量);
+        變數 中心 = 向量縮放(向量相加(向量甲, 向量乙), 0.5d);
+        變數 色彩索引 = 索引-(索引/長度(色彩列表))*長度(色彩列表);
+        變數 色彩 = 色彩列表[色彩索引];
+        變數 地板 = 建立方塊(向量相加(中心, 旋轉向量(四元數, [0, -設定模組.賽道厚度/2, 0])),
+            [設定模組.賽道寬度, 設定模組.賽道厚度, 距離+0.3d], 四元數, 色彩);
+        構件列表 = 加入(構件列表, 地板);
+        斜坡列表 = 加入(斜坡列表, 地板);
         # Rails stop before each junction, leaving room to steer around corners.
-        迴圈 (變數 side = -1; side <= 1; side += 2) {
-            Pieces = 加入(Pieces, Box(Add(center, Rotate(q, [side*(C.TrackWidth/2+0.05d), 0.3d, 0])),
-                [0.16d, 0.6d, distance-2.0d], q, [26, 57, 76]));
+        迴圈 (變數 側別 = -1; 側別 <= 1; 側別 += 2) {
+            構件列表 = 加入(構件列表, 建立方塊(向量相加(中心, 旋轉向量(四元數, [側別*(設定模組.賽道寬度/2+0.05d), 0.3d, 0])),
+                [0.16d, 0.6d, 距離-2.0d], 四元數, [26, 57, 76]));
         }
-        Gates = 加入(Gates, b);
+        檢查門列表 = 加入(檢查門列表, 向量乙);
     }
     # Broad, flush landing pads bridge the bends and act as respawn platforms.
-    迴圈 (變數 i = 0; i < 長度(Nodes); i++) {
-        變數 n = Nodes[i];
-        變數 pad = Box([n[0], n[1]-0.2d, n[2]], [4.0d, 0.4d, 4.0d], Identity, [38, 73, 93]);
-        Pieces = 加入(Pieces, pad);
-        Ramps = 加入(Ramps, pad);
+    迴圈 (變數 索引 = 0; 索引 < 長度(節點列表); 索引++) {
+        變數 節點 = 節點列表[索引];
+        變數 平台 = 建立方塊([節點[0], 節點[1]-0.2d, 節點[2]], [4.0d, 0.4d, 4.0d], 單位四元數, [38, 73, 93]);
+        構件列表 = 加入(構件列表, 平台);
+        斜坡列表 = 加入(斜坡列表, 平台);
         # Structural pillars also collide, so rendered and physical geometry agree.
-        Pieces = 加入(Pieces, Box([n[0], (n[1]-0.45d)/2-1, n[2]],
-            [0.65d, n[1]+1.55d, 0.65d], Identity, [23, 39, 55]));
+        構件列表 = 加入(構件列表, 建立方塊([節點[0], (節點[1]-0.45d)/2-1, 節點[2]],
+            [0.65d, 節點[1]+1.55d, 0.65d], 單位四元數, [23, 39, 55]));
     }
-    變數 end = Nodes[長度(Nodes)-1];
-    Pieces = 加入(Pieces, Box([end[0], end[1]+0.4d, end[2]-2], [4, 0.8d, 0.2d], Identity, [238, 176, 62]));
-    回傳 {"pieces": Pieces, "ramps": Ramps, "gates": Gates, "nodes": Nodes};
+    變數 終點節點 = 節點列表[長度(節點列表)-1];
+    構件列表 = 加入(構件列表, 建立方塊([終點節點[0], 終點節點[1]+0.4d, 終點節點[2]-2], [4, 0.8d, 0.2d], 單位四元數, [238, 176, 62]));
+    回傳 {"pieces": 構件列表, "ramps": 斜坡列表, "gates": 檢查門列表, "nodes": 節點列表};
 };

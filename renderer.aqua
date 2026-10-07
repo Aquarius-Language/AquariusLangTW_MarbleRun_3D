@@ -1,85 +1,85 @@
-變數 P = 匯入("Processing");
-變數 GPU = 匯入("WGPU");
-變數 C = 匯入(目前工作目錄 + "/config.aqua");
-變數 M = 匯入(目前工作目錄 + "/math3d.aqua");
-變數 Shaders = 匯入(目前工作目錄 + "/shaders.aqua");
-變數 Matrix = M.Matrix;
-變數 Scene = 0;
-變數 Material = 0;
-變數 Course = 0;
-變數 Sky = C.Sky;
-變數 Initialize = 函式(course) {
-    Course = course;
-    Scene = P.createGraphics(P.width, P.height, P.P3D);
-    Material = P.createShader(Shaders.Vertex, Shaders.Fragment);
-    印出("Marble Run renderer:", GPU.Backend, " / Processing", P.backend);
+變數 繪圖模組 = 匯入("Processing");
+變數 圖形處理模組 = 匯入("WGPU");
+變數 設定模組 = 匯入(目前工作目錄 + "/config.aqua");
+變數 數學模組 = 匯入(目前工作目錄 + "/math3d.aqua");
+變數 著色器模組 = 匯入(目前工作目錄 + "/shaders.aqua");
+變數 旋轉矩陣 = 數學模組.旋轉矩陣;
+變數 場景畫布 = 0;
+變數 材質 = 0;
+變數 賽道資料 = 0;
+變數 天空色彩 = 設定模組.天空色彩;
+變數 初始化 = 函式(新賽道資料) {
+    賽道資料 = 新賽道資料;
+    場景畫布 = 繪圖模組.createGraphics(繪圖模組.width, 繪圖模組.height, 繪圖模組.P3D);
+    材質 = 繪圖模組.createShader(著色器模組.頂點著色器, 著色器模組.片段著色器);
+    印出("Marble Run renderer:", 圖形處理模組.Backend, " / Processing", 繪圖模組.backend);
 };
-變數 Box = 函式(position, size, rotation, color) {
-    Scene.pushMatrix();
-    Scene.translate(position[0], position[1], position[2]);
-    Scene.applyMatrix(Matrix(rotation));
-    Scene.fill(color[0], color[1], color[2]);
-    Scene.box(size[0], size[1], size[2]);
-    Scene.popMatrix();
+變數 建立方塊 = 函式(位置, 尺寸, 旋轉, 色彩) {
+    場景畫布.pushMatrix();
+    場景畫布.translate(位置[0], 位置[1], 位置[2]);
+    場景畫布.applyMatrix(旋轉矩陣(旋轉));
+    場景畫布.fill(色彩[0], 色彩[1], 色彩[2]);
+    場景畫布.box(尺寸[0], 尺寸[1], 尺寸[2]);
+    場景畫布.popMatrix();
 };
-變數 Gate = 函式(index, state) {
-    變數 node = Course["gates"][index];
-    變數 color = [39, 72, 88];
-    如果 (index < state["checkpoint"]) { color = [67, 178, 132]; }
-    如果 (index == state["checkpoint"]) { color = [255, 188, 71]; }
+變數 繪製檢查門 = 函式(門索引, 狀態資料) {
+    變數 節點資料 = 賽道資料["gates"][門索引];
+    變數 色彩 = [39, 72, 88];
+    如果 (門索引 < 狀態資料["checkpoint"]) { 色彩 = [67, 178, 132]; }
+    如果 (門索引 == 狀態資料["checkpoint"]) { 色彩 = [255, 188, 71]; }
     # These arches are visual checkpoint markers, with an open collision-free center.
-    迴圈 (變數 side = -1; side <= 1; side += 2) {
-        Box([node[0]+side*2.05d, node[1]+1.35d, node[2]],
-            [0.16d, 2.7d, 0.16d], [0, 0, 0, 1], color);
+    迴圈 (變數 側別 = -1; 側別 <= 1; 側別 += 2) {
+        建立方塊([節點資料[0]+側別*2.05d, 節點資料[1]+1.35d, 節點資料[2]],
+            [0.16d, 2.7d, 0.16d], [0, 0, 0, 1], 色彩);
     }
-    Box([node[0], node[1]+2.7d, node[2]], [4.26d, 0.16d, 0.16d], [0, 0, 0, 1], color);
+    建立方塊([節點資料[0], 節點資料[1]+2.7d, 節點資料[2]], [4.26d, 0.16d, 0.16d], [0, 0, 0, 1], 色彩);
 };
-變數 Draw = 函式(state, camera) {
+變數 繪製畫面 = 函式(狀態資料, 鏡頭資料) {
     # Resize only when needed; honor high-DPI framebuffer sizes.
-    如果 (Scene.width != P.width || Scene.height != P.height ||
-        Scene.pixelWidth != P.pixelWidth || Scene.pixelHeight != P.pixelHeight) {
-        Scene.resize(P.width, P.height, P.pixelWidth, P.pixelHeight);
+    如果 (場景畫布.width != 繪圖模組.width || 場景畫布.height != 繪圖模組.height ||
+        場景畫布.pixelWidth != 繪圖模組.pixelWidth || 場景畫布.pixelHeight != 繪圖模組.pixelHeight) {
+        場景畫布.resize(繪圖模組.width, 繪圖模組.height, 繪圖模組.pixelWidth, 繪圖模組.pixelHeight);
     }
-    變數 eye = camera["eye"]; 變數 target = camera["target"];
-    Scene.beginDraw();
-    Scene.background(Sky[0], Sky[1], Sky[2]); Scene.noStroke();
-    Scene.perspective(P.PI/3, P.width*1.0d/P.height, 0.08d, 160);
-    Scene.camera(eye[0], eye[1], eye[2], target[0], target[1], target[2], 0, 1, 0);
-    Scene.shader(Material);
-    Material.set("eye", [eye[0], eye[1], eye[2], 1]);
-    Material.set("marble", 0); Material.set("shine", 0.15d);
-    Box([0, -2.3d, -8], [64, 0.4d, 96], [0, 0, 0, 1], [17, 30, 46]);
+    變數 視點位置 = 鏡頭資料["eye"]; 變數 目標位置 = 鏡頭資料["target"];
+    場景畫布.beginDraw();
+    場景畫布.background(天空色彩[0], 天空色彩[1], 天空色彩[2]); 場景畫布.noStroke();
+    場景畫布.perspective(繪圖模組.PI/3, 繪圖模組.width*1.0d/繪圖模組.height, 0.08d, 160);
+    場景畫布.camera(視點位置[0], 視點位置[1], 視點位置[2], 目標位置[0], 目標位置[1], 目標位置[2], 0, 1, 0);
+    場景畫布.shader(材質);
+    材質.set("視點", [視點位置[0], 視點位置[1], 視點位置[2], 1]);
+    材質.set("彈珠模式", 0); 材質.set("光澤", 0.15d);
+    建立方塊([0, -2.3d, -8], [64, 0.4d, 96], [0, 0, 0, 1], [17, 30, 46]);
     # Inlaid grid below the elevated course provides scale and motion cues.
-    迴圈 (變數 x = -24; x <= 24; x += 4) {
-        Box([x, -2.08d, -8], [0.035d, 0.02d, 80], [0, 0, 0, 1], [28, 48, 64]);
+    迴圈 (變數 橫向分量 = -24; 橫向分量 <= 24; 橫向分量 += 4) {
+        建立方塊([橫向分量, -2.08d, -8], [0.035d, 0.02d, 80], [0, 0, 0, 1], [28, 48, 64]);
     }
-    迴圈 (變數 z = -44; z <= 28; z += 4) {
-        Box([0, -2.08d, z], [56, 0.02d, 0.035d], [0, 0, 0, 1], [28, 48, 64]);
+    迴圈 (變數 縱向分量 = -44; 縱向分量 <= 28; 縱向分量 += 4) {
+        建立方塊([0, -2.08d, 縱向分量], [56, 0.02d, 0.035d], [0, 0, 0, 1], [28, 48, 64]);
     }
-    變數 pieces = Course["pieces"];
-    迴圈 (變數 i = 0; i < 長度(pieces); i++) {
-        變數 piece = pieces[i];
-        Box(piece["position"], piece["size"], piece["rotation"], piece["color"]);
+    變數 構件資料列表 = 賽道資料["pieces"];
+    迴圈 (變數 索引 = 0; 索引 < 長度(構件資料列表); 索引++) {
+        變數 構件 = 構件資料列表[索引];
+        建立方塊(構件["position"], 構件["size"], 構件["rotation"], 構件["color"]);
     }
-    迴圈 (變數 i = 0; i < 長度(Course["gates"]); i++) { Gate(i, state); }
+    迴圈 (變數 索引 = 0; 索引 < 長度(賽道資料["gates"]); 索引++) { 繪製檢查門(索引, 狀態資料); }
     # Start chevron and finish checkerboard sit just above their platforms.
-    變數 start = Course["nodes"][0];
-    Box([start[0], start[1]+0.012d, start[2]], [2, 0.02d, 0.16d], [0, 0, 0, 1], [238, 245, 245]);
-    變數 finish = Course["nodes"][長度(Course["nodes"])-1];
-    迴圈 (變數 row = 0; row < 4; row++) {
-        迴圈 (變數 col = 0; col < 8; col++) {
-            變數 shade = 230; 變數 sum = row+col;
-            如果 (sum-(sum/2)*2 == 0) { shade = 30; }
-            Box([finish[0]-1.75d+col*0.5d, finish[1]+0.012d, finish[2]-0.75d+row*0.5d],
-                [0.49d, 0.02d, 0.49d], [0, 0, 0, 1], [shade, shade, shade]);
+    變數 起點 = 賽道資料["nodes"][0];
+    建立方塊([起點[0], 起點[1]+0.012d, 起點[2]], [2, 0.02d, 0.16d], [0, 0, 0, 1], [238, 245, 245]);
+    變數 終點 = 賽道資料["nodes"][長度(賽道資料["nodes"])-1];
+    迴圈 (變數 列索引 = 0; 列索引 < 4; 列索引++) {
+        迴圈 (變數 欄索引 = 0; 欄索引 < 8; 欄索引++) {
+            變數 灰階值 = 230; 變數 索引總和 = 列索引+欄索引;
+            如果 (索引總和-(索引總和/2)*2 == 0) { 灰階值 = 30; }
+            建立方塊([終點[0]-1.75d+欄索引*0.5d, 終點[1]+0.012d, 終點[2]-0.75d+列索引*0.5d],
+                [0.49d, 0.02d, 0.49d], [0, 0, 0, 1], [灰階值, 灰階值, 灰階值]);
         }
     }
-    變數 position = state["position"];
-    Scene.pushMatrix(); Scene.translate(position[0], position[1], position[2]);
-    Scene.applyMatrix(Matrix(state["rotation"]));
-    Material.set("marble", 1); Material.set("shine", 0.9d);
-    Scene.fill(255, 117, 82); Scene.sphereDetail(28, 18); Scene.sphere(C.Radius);
-    Scene.popMatrix(); Scene.resetShader(); Scene.endDraw();
-    P.background(Sky[0], Sky[1], Sky[2]);
-    P.image(Scene, 0, 0, P.width, P.height);
+    變數 位置 = 狀態資料["position"];
+    場景畫布.pushMatrix(); 場景畫布.translate(位置[0], 位置[1], 位置[2]);
+    場景畫布.applyMatrix(旋轉矩陣(狀態資料["rotation"]));
+    材質.set("彈珠模式", 1); 材質.set("光澤", 0.9d);
+    場景畫布.fill(255, 117, 82); 場景畫布.sphereDetail(28, 18); 場景畫布.sphere(設定模組.彈珠半徑);
+    場景畫布.popMatrix(); 場景畫布.resetShader(); 場景畫布.endDraw();
+    繪圖模組.background(天空色彩[0], 天空色彩[1], 天空色彩[2]);
+    繪圖模組.image(場景畫布, 0, 0, 繪圖模組.width, 繪圖模組.height);
 };
