@@ -14,7 +14,7 @@
 
 ## 執行方式
 
-請使用已建置的 **`AquariusDesktopVMREPL.exe`** 發行套件，保留隨附的繪圖與物理相依套件，並確認電腦具有相容的 GPU 驅動程式。遊戲介面使用系統字型 **Microsoft JhengHei（微軟正黑體）**；請使用支援繁體中文字型的 Windows 執行環境。
+請使用支援雙語函式的 **`AquariusDesktopVMREPL.exe`**（AquariusLangTW `6331675`／2026-10-08 或更新版本），保留隨附的繪圖與物理相依套件，並確認電腦具有相容的 GPU 驅動程式。遊戲介面使用系統字型 **Microsoft JhengHei（微軟正黑體）**；請使用支援繁體中文字型的 Windows 執行環境。
 
 請將完整執行環境放在同一個目錄中。在遊戲目錄下，以執行檔啟動入口腳本：
 
@@ -58,8 +58,9 @@ AquariusDesktopVMREPL.exe .\main.aqua
 | `shaders.aqua` | WGSL 頂點與片段著色器 |
 | `renderer.aqua` | GPU 畫布、賽道幾何、檢查點與滾動彈珠 |
 | `hud.aqua` | 計時、進度、小地圖、操作提示、暫停與結果面板 |
+| `smoke.aqua` | 使用原生繪圖與物理引擎的自動整合驗證 |
 
-專案自訂的變數、函式繫結、參數與著色器變數皆使用繁體中文名稱。外部執行環境 API 與著色器入口則保留 Processing、Jolt 及 WebGPU 所要求的名稱。
+專案自訂的變數、函式繫結、參數與著色器變數皆使用繁體中文名稱。Processing、畫布、著色器與 Jolt 的函式呼叫亦全部使用雙語 API 的繁體中文名稱（例如 `尺寸`、`建立畫布`、`套用矩陣`、`建立世界`、`步進`、`釋放`），名稱依據 [AquariusLangTW 雙語函式對照表](https://github.com/Aquarius-Language/AquariusLangTW/blob/6331675d9ba8571a5997690c429d1c5660148cc7/AquariusDesktopVMREPL/LIBRARY_NAMES.md)。模組名稱、常數、屬性、事件字串與 WGSL 入口及內建介面仍使用執行環境要求的原名。
 
 修改 `config.aqua` 即可調整路線或移動參數。相鄰節點會建立具有旋轉角度的斜坡，寬大的平台則銜接各個轉角。碰撞體與繪圖幾何共用位置、尺寸及旋轉資料。拱門、棋盤格地磚與背景網格皆為裝飾。高架賽道下方的地面僅供顯示；彈珠落至回復高度以下時，就會觸發重生。
 
@@ -84,6 +85,18 @@ $彈珠腳本列表 = @('.\main.aqua') + @(
 ```
 
 腳本瓶包含 WGSL 字串，不需要美術素材檔案。發佈時，請一併提供完整的桌面 VM 與原生相依套件。
+
+## 驗證遊戲
+
+整合驗證會開啟遊戲視窗，檢查原生物理、轉向、煞車、跳躍、暫停、重生、檢查點、完賽、最佳紀錄、鏡頭切換與畫布縮放，並繪製各種介面狀態。完成後會自動關閉視窗；成功時印出 `整合驗證通過` 並以代碼 0 結束，失敗則以非零代碼結束。
+
+```powershell
+& 'C:\Aquarius\AquariusDesktopVMREPL.exe' .\smoke.aqua
+```
+
+亦可在打包所有腳本後執行 `AquariusDesktopVMREPL.exe --entry smoke.rius .\marble_run.bottle`，驗證不依賴來源檔案的腳本瓶。
+
+VM 套件必須包含符合其相依版本的 `System.Text.Json.dll`；若編譯腳本瓶時出現無法載入 `System.Text.Json, Version=9.0.0.0` 的錯誤，請使用相依套件完整的 VM 建置。
 
 ## 授權
 
