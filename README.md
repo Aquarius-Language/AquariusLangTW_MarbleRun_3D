@@ -12,6 +12,20 @@
 
 **Jolt Physics** 負責模擬彈珠與具有旋轉角度的方塊賽道，包含重力、摩擦、滾動、護欄碰撞及連續碰撞偵測。遊戲不需要外部美術素材，也不需要修改語言執行環境。
 
+## 網頁版與 GitHub Pages
+
+網頁版網址：[彈珠競速－高空速降](https://aquarius-language.github.io/AquariusLangTW_MarbleRun_3D/)（首次部署成功後即可使用）。請使用支援 WebGPU 的瀏覽器。
+
+`web/` 包含已建置的遊戲、JavaScript 模組與 WebAssembly 相依檔案，可直接作為靜態網站發佈，不需要在 GitHub Actions 中重新編譯 Aquarius 腳本。
+
+啟用部署：
+
+1. 在儲存庫 **Settings → Pages → Build and deployment → Source** 選擇 **GitHub Actions**。
+2. 將 `.github/workflows/pages.yml` 推送至 `main`。首次推送工作流程，以及後續 `main` 上的 `web/` 或工作流程更新，都會自動部署。
+3. 亦可在 **Actions → Deploy game to GitHub Pages → Run workflow** 選擇 `main` 手動部署。成功後，`github-pages` 環境會顯示網站連結。
+
+工作流程僅發佈 `web/` 的內容。修改 `.aqua` 來源後，請先重新建置網頁版並提交更新後的 `web/` 檔案，再部署網站。
+
 ## 執行方式
 
 請使用支援雙語函式的 **`AquariusDesktopVMREPL.exe`**（AquariusLangTW `6331675`／2026-10-08 或更新版本），保留隨附的繪圖與物理相依套件，並確認電腦具有相容的 GPU 驅動程式。遊戲介面使用系統字型 **Microsoft JhengHei（微軟正黑體）**；請使用支援繁體中文字型的 Windows 執行環境。
