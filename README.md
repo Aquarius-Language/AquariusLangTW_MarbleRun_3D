@@ -26,21 +26,18 @@
 
 工作流程僅發佈 `web/` 的內容。修改 `.aqua` 來源後，請先重新建置網頁版並提交更新後的 `web/` 檔案，再部署網站。
 
-## 執行方式
+## 建置與桌面執行
 
-請使用支援雙語函式的 **`AquariusDesktopVMREPL.exe`**（AquariusLangTW `6331675`／2026-10-08 或更新版本），保留隨附的繪圖與物理相依套件，並確認電腦具有相容的 GPU 驅動程式。遊戲介面使用系統字型 **Microsoft JhengHei（微軟正黑體）**；請使用支援繁體中文字型的 Windows 執行環境。
-
-請將完整執行環境放在同一個目錄中。在遊戲目錄下，以執行檔啟動入口腳本：
+使用新版統一編譯器 `aqua.exe`：
 
 ```powershell
-# 執行檔已加入 PATH 時：
-AquariusDesktopVMREPL.exe .\main.aqua
-
-# 或指定執行檔的完整路徑：
-& 'C:\Aquarius\AquariusDesktopVMREPL.exe' .\main.aqua
+.\建置.ps1 -桌面
+aqua run .\marble_run.wasm
+# 自包含桌面程式不需要另行安裝星泉或 .NET
+.\dist\marble_run.exe
 ```
 
-請將範例路徑替換成實際的執行檔位置。腳本匯入路徑以各腳本所在目錄為基準，因此也可以指定 `main.aqua` 的絕對路徑，從其他工作目錄啟動。
+建置腳本優先使用參考專案的 `dist/aqua/aqua.exe`；可用 `-編譯器` 指定新版編譯器。桌面以 Wasmtime 執行，瀏覽器以原生 WebAssembly 執行相同程式；兩者共用 Jolt WASM。繪圖仍需要相容 GPU，中文字型使用 Microsoft JhengHei。
 
 ## 操作方式
 
@@ -74,7 +71,7 @@ AquariusDesktopVMREPL.exe .\main.aqua
 | `hud.aqua` | 計時、進度、小地圖、操作提示、暫停與結果面板 |
 | `smoke.aqua` | 使用原生繪圖與物理引擎的自動整合驗證 |
 
-專案自訂的變數、函式繫結、參數與著色器變數皆使用繁體中文名稱。Processing、畫布、著色器與 Jolt 的函式呼叫亦全部使用雙語 API 的繁體中文名稱（例如 `尺寸`、`建立畫布`、`套用矩陣`、`建立世界`、`步進`、`釋放`），名稱依據 [AquariusLangTW 雙語函式對照表](https://github.com/Aquarius-Language/AquariusLangTW/blob/6331675d9ba8571a5997690c429d1c5660148cc7/AquariusDesktopVMREPL/LIBRARY_NAMES.md)。模組名稱、常數、屬性、事件字串與 WGSL 入口及內建介面仍使用執行環境要求的原名。
+專案自訂的變數、函式繫結、參數與著色器變數皆使用繁體中文名稱。Processing、畫布、著色器與 Jolt 的函式呼叫亦全部使用雙語 API 的繁體中文名稱（例如 `尺寸`、`建立畫布`、`套用矩陣`、`建立世界`、`步進`、`釋放`），名稱依據 [AquariusLangTW 雙語函式對照表](https://github.com/Aquarius-Language/AquariusLangTW/blob/main/AquariusDesktop/LIBRARY_NAMES.md)。模組名稱、常數、屬性、事件字串與 WGSL 入口及內建介面仍使用執行環境要求的原名。
 
 修改 `config.aqua` 即可調整路線或移動參數。相鄰節點會建立具有旋轉角度的斜坡，寬大的平台則銜接各個轉角。碰撞體與繪圖幾何共用位置、尺寸及旋轉資料。拱門、棋盤格地磚與背景網格皆為裝飾。高架賽道下方的地面僅供顯示；彈珠落至回復高度以下時，就會觸發重生。
 
@@ -82,35 +79,17 @@ AquariusDesktopVMREPL.exe .\main.aqua
 
 正常離開時會釋放 Jolt 資源；若腳本或回呼發生錯誤，桌面執行環境也會釋放原生資源。Processing 會釋放視窗與 GPU 資源。
 
-## 編譯成可攜式腳本瓶（bottle）
+## 編譯與驗證
 
-請打包**所有**腳本，並將 `main.aqua` 放在第一個。在遊戲目錄下，使用相同的預先建置執行檔：
-
-```powershell
-$彈珠執行器 = 'C:\Aquarius\AquariusDesktopVMREPL.exe'
-$彈珠腳本列表 = @('.\main.aqua') + @(
-    Get-ChildItem . -Filter *.aqua |
-    Where-Object Name -ne 'main.aqua' |
-    Sort-Object Name |
-    ForEach-Object FullName
-)
-& $彈珠執行器 -c --root . -o .\marble_run.bottle @彈珠腳本列表
-& $彈珠執行器 .\marble_run.bottle
-```
-
-腳本瓶包含 WGSL 字串，不需要美術素材檔案。發佈時，請一併提供完整的桌面 VM 與原生相依套件。
-
-## 驗證遊戲
-
-整合驗證會開啟遊戲視窗，檢查原生物理、轉向、煞車、跳躍、暫停、重生、檢查點、完賽、最佳紀錄、鏡頭切換與畫布縮放，並繪製各種介面狀態。完成後會自動關閉視窗；成功時印出 `整合驗證通過` 並以代碼 0 結束，失敗則以非零代碼結束。
+`建置.ps1` 會將所有模組及 WGSL 字串編譯至 `marble_run.wasm`，再輸出完整 `web` 網站。舊 `.bottle`／`.rius` 產物需重新編譯。
 
 ```powershell
-& 'C:\Aquarius\AquariusDesktopVMREPL.exe' .\smoke.aqua
+aqua run marble_run.wasm --entry smoke.aqua
+# 網頁需透過 localhost 或 HTTPS
+python -m http.server 8080 --bind 127.0.0.1 --directory web
 ```
 
-亦可在打包所有腳本後執行 `AquariusDesktopVMREPL.exe --entry smoke.rius .\marble_run.bottle`，驗證不依賴來源檔案的腳本瓶。
-
-VM 套件必須包含符合其相依版本的 `System.Text.Json.dll`；若編譯腳本瓶時出現無法載入 `System.Text.Json, Version=9.0.0.0` 的錯誤，請使用相依套件完整的 VM 建置。
+整合驗證使用真正圖學與 Jolt，檢查轉向、煞車、跳躍、暫停、重生、檢查點、完賽、最佳紀錄及鏡頭。桌面驗證主視窗調整尺寸；網頁主視窗跟隨瀏覽器視口，離屏畫布尺寸仍由程式調整。
 
 ## 授權
 

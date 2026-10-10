@@ -2,3 +2,4 @@
 *.png
 !preview.png
 *.ppm
+dist/
