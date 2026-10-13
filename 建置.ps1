@@ -1,4 +1,6 @@
-﻿param([string]$編譯器 = 'aqua', [switch]$桌面)
+﻿param([string]$編譯器 = 'aqua', [switch]$桌面,
+    [switch]$Android, [switch]$APK
+)
 $ErrorActionPreference = 'Stop'
 
 $原主控台輸出編碼 = [Console]::OutputEncoding
@@ -18,6 +20,12 @@ try {
         if ($LASTEXITCODE -ne 0) { throw '桌面輸出失敗。' }
     }
     Write-Output '完成：marble_run.wasm 與 ./web。'
+
+    if ($Android -or $APK) {
+        $AndroidOutput = if ($APK) { 'dist/android.apk' } else { ('dist/android-project-' + [Guid]::NewGuid().ToString('N').Substring(0,8)) }
+        & $編譯器 build 'marble_run.wasm' --target android -o $AndroidOutput
+        if ($LASTEXITCODE -ne 0) { throw 'Android 建置失敗。' }
+    }
 } finally {
     [Console]::OutputEncoding = $原主控台輸出編碼
     $OutputEncoding = $原輸出編碼

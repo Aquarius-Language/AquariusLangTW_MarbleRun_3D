@@ -1,14 +1,17 @@
 import {Scope,num,numeric,nativeCall,nativeOwner,isPromiseLike,portableBuiltin} from './values.mjs';
 import {validateManifest} from './wasm-manifest.mjs';
-// Browser transport only: Aquarius values, calls and control flow execute in Wasm.
+// Shared engine transport: Aquarius values, calls and control flow execute in Wasm.
 export class WasmRuntime {
   constructor(host){this.host=host;this.cancelled=false;this.executions=new Set();this.nativeRoots=new Set();this.origins=new WeakMap();}
   async ready(){
     if(this.program)return this.program;
+    this.initializing??=this.initialize().catch(error=>{this.initializing=null;throw error;});return this.initializing;
+  }
+  async initialize(){
     const module=this.host.bundle.compiledModule??await WebAssembly.compile(await(await fetch(this.host.bundle.wasm)).arrayBuffer());
     const sections=WebAssembly.Module.customSections(module,'aquarius.application');if(sections.length!==1)throw new Error('Missing or duplicate Aquarius metadata');
     const metadata=validateManifest(module,JSON.parse(new TextDecoder().decode(sections[0])));
-    this.program={module,metadata};this.program.session=new Session(this,this.program);return this.program;
+    const program={module,metadata};program.session=new Session(this,program);await program.session.initialize();this.program=program;return program;
   }
   async execute(index,env=new Scope(),builtins=this.host.builtins,program=null){program??=await this.ready();const s=program.session,context=s.contexts.length;s.contexts.push(builtins);const scope=s.scope(env);if(!s.running.length)s.synchronizeIn();return s.run(s.call('aqua_execute',program.metadata.programAddress,index,scope,context));}
   async invoke(fn,args=[]){
@@ -25,7 +28,9 @@ export class WasmRuntime {
 class Session {
   constructor(runtime,program){
     this.runtime=runtime;this.program=program;this.contexts=[];this.natives=[null];this.nativeIds=new WeakMap();this.freeNativeIds=[];this.objects=new Map();this.scopes=new WeakMap();this.scopeLeases=[];this.projected=new Map();this.texts=new Map();this.leases=[];this.running=[];this.reading=new Set();this.writing=new Set();
-    this.instance=new WebAssembly.Instance(program.module,{aquarius_v2:{service:(...a)=>this.service(...a)}});this.exports=this.instance.exports;this.call('aqua_initialize',program.metadata.heapStart);
+  }
+  async initialize(){
+    this.instance=await WebAssembly.instantiate(this.program.module,{aquarius_v2:{service:(...a)=>this.service(...a)}});this.exports=this.instance.exports;this.call('aqua_initialize',this.program.metadata.heapStart);
     this.dirtyArrays=new Set();this.arrayOwners=new Map();this.mutableHashes=typeof this.exports.aqua_hash_expose==='function';
   }
   call(name,...args){return this.exports[name](...args);}
@@ -61,9 +66,9 @@ class Session {
   flushDirty(owner=null){let reference;if(this.mutableHashes){this.refreshingDirtyHashes=true;try{while((reference=this.call('aqua_take_dirty_hash'))!==0){const cached=this.objects.get('7:'+reference)?.deref();if(cached)this.refresh(7,reference,cached);}}finally{this.refreshingDirtyHashes=false;}}while((reference=this.call('aqua_take_dirty_array'))!==0)this.dirtyArrays.add(reference);for(const item of this.dirtyArrays){const cached=this.objects.get(`6:${item}`)?.deref();if(!cached){this.dirtyArrays.delete(item);this.arrayOwners.delete(item);continue;}if(owner&&!this.arrayOwners.get(item)?.some(w=>w.deref()===owner))continue;this.refresh(6,item,cached);this.dirtyArrays.delete(item);}}
   synchronizeOut(){this.flushDirty();this.refreshingDirtyHashes=true;try{for(const lease of this.scopeLeases){const env=lease.owner.deref();if(lease.mirror&&env)for(const [n,v]of this.bindings(lease.pointer))env.create(n,v);}}finally{this.refreshingDirtyHashes=false;}}
   async run(pointer){
-    const state={pointer,session:this,pending:null};this.runtime.executions.add(state);this.running.push(state);
+    const state={pointer,session:this,pending:null};let sliceStart=performance.now();this.runtime.executions.add(state);this.running.push(state);
     try{while(true){if(this.runtime.cancelled||this.runtime.host.signal?.aborted)throw new Error('Execution cancelled');const previous=this.dispatchState;this.dispatchState=state;let status;try{status=this.call('aqua_run',pointer,32768);}finally{this.dispatchState=previous;}
-      if(status===1){this.collect();if(typeof window!=='undefined')await new Promise(r=>setTimeout(r,0));continue;}
+      if(status===1){this.collect();if(performance.now()-sliceStart>=8){if(this.runtime.host.yieldExecution)await this.runtime.host.yieldExecution();else if(typeof window!=='undefined')await new Promise(r=>setTimeout(r,0));sliceStart=performance.now();}continue;}
       if(status===2){const pending=state.pending;try{const result=await pending.promise;if(this.runtime.cancelled||this.runtime.host.signal?.aborted)throw new Error('Execution cancelled');const cell=this.call('aqua_value');if(pending.synchronize)this.synchronizeIn();pending.args.forEach((v,i)=>this.write(pending.arguments+i*16,v));this.write(cell,result);this.call('aqua_resume',pointer,cell);}finally{this.runtime.nativeRoots.delete(pending.roots);state.pending=null;}continue;}
       const p=this.call('aqua_result',pointer);if(status===3)throw new Error(this.text(this.int(p+4)));return this.read(p);
     }}finally{this.synchronizeOut();this.call('aqua_release_execution',pointer);this.runtime.executions.delete(state);const i=this.running.indexOf(state);if(i>=0)this.running.splice(i,1);}

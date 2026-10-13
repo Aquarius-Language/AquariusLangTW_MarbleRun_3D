@@ -103,7 +103,7 @@ export class BrowserWebcamSession {
     try {
       this.live(); if (!this.context) throw new WebcamFailure('Unavailable');
       await bounded(this.video.play(), this.closed.signal, this.options.timeout);
-      await this.waitFrame(); this.live();
+      await this.waitFrame();this.live();
     } catch (error) { this.dispose(); throw failure(error); }
   }
   async waitFrame() {
@@ -120,8 +120,14 @@ export class BrowserWebcamSession {
     this.live(); if (this.capturing) throw new WebcamFailure('Unavailable', '同一工作階段不能同時擷取多張影格。');
     this.capturing = true;
     try {
-      await this.waitFrame(); this.live();
-      const {width, height} = this.options; this.context.drawImage(this.video, 0, 0, width, height);
+      // Consume a newer decoded frame immediately; waiting unconditionally adds
+      // another camera interval when inference has already taken one interval.
+      if(this.video.readyState<2||!Number.isFinite(this.video.currentTime)||this.video.currentTime===this.lastCapturedTime)await this.waitFrame();
+      this.live();this.lastCapturedTime=this.video.currentTime;
+      const {width, height} = this.options;
+      const vw=this.video.videoWidth||width,vh=this.video.videoHeight||height,scale=Math.min(width/vw,height/vh);
+      this.context.fillStyle='black';this.context.fillRect(0,0,width,height);
+      this.context.drawImage(this.video,(width-vw*scale)/2,(height-vh*scale)/2,vw*scale,vh*scale);
       const pixels = new Uint8Array(this.context.getImageData(0, 0, width, height).data);
       if (pixels.length !== width * height * 4) throw new WebcamFailure('Unavailable');
       for (let i = 3; i < pixels.length; i += 4) if (pixels[i] !== 255) throw new WebcamFailure('Unavailable');
@@ -139,6 +145,7 @@ export class BrowserWebcamSession {
 export function registerWebcam(host) {
   const backend = host.webcam = new BrowserWebcamBackend();
   const module = host.library('攝影機');
+  host.modules.set('Webcam', module); host.modules.set('網路攝影機', module);
   host.bind(module, '攝影機', '是否支援', () => backend.isSupported);
   host.bind(module, '攝影機', '列出裝置', async () => (await backend.enumerate(host.signal)).map(d => {
     const m = host.newModule(); host.set(m, '識別碼', d.id); host.set(m, '名稱', d.name); return m;
