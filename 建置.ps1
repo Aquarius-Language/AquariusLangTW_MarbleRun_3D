@@ -1,33 +1,18 @@
-﻿param([string]$編譯器 = 'aqua', [switch]$桌面,
-    [switch]$Android, [switch]$APK
-)
+﻿param([string]$編譯器 = '', [switch]$桌面, [switch]$Android, [switch]$APK)
 $ErrorActionPreference = 'Stop'
-
-$原主控台輸出編碼 = [Console]::OutputEncoding
-$原輸出編碼 = $OutputEncoding
+if (!$編譯器) { $編譯器 = Join-Path $PSScriptRoot '../AquariusLangTW/dist/aqua-current/aqua.exe'; if (!(Test-Path -LiteralPath $編譯器)) { $編譯器 = 'aqua' } }
 Push-Location $PSScriptRoot
 try {
-    # aqua 使用 UTF-8 輸出；Windows PowerShell 需要明確指定解碼方式。
-    [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
-    $OutputEncoding = [Console]::OutputEncoding
-    $來源 = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.aqua' | Sort-Object Name | ForEach-Object FullName)
-    & $編譯器 build @來源 --root . --entry main.aqua -o marble_run.wasm
-    if ($LASTEXITCODE -ne 0) { throw '彈珠原始碼編譯失敗。' }
-    & $編譯器 build marble_run.wasm --target web -o web
-    if ($LASTEXITCODE -ne 0) { throw '網頁輸出失敗。' }
-    if ($桌面) {
-        & $編譯器 build marble_run.wasm --target windows -o dist/marble_run.exe
-        if ($LASTEXITCODE -ne 0) { throw '桌面輸出失敗。' }
-    }
-    Write-Output '完成：marble_run.wasm 與 ./web。'
-
+    & $編譯器 bottle restore --project .
+    if ($LASTEXITCODE) { throw 'Bottle 函式庫還原失敗。' }
+    & $編譯器 build . -o marble_run.wasm
+    if ($LASTEXITCODE) { throw 'TOML 專案編譯失敗。' }
+    & $編譯器 build . --target web -o web
+    if ($LASTEXITCODE) { throw '網頁輸出失敗。' }
+    if ($桌面) { & $編譯器 build . --target windows -o dist/marble_run.exe; if ($LASTEXITCODE) { throw '桌面輸出失敗。' } }
     if ($Android -or $APK) {
-        $AndroidOutput = if ($APK) { 'dist/android.apk' } else { ('dist/android-project-' + [Guid]::NewGuid().ToString('N').Substring(0,8)) }
-        & $編譯器 build 'marble_run.wasm' --target android -o $AndroidOutput
-        if ($LASTEXITCODE -ne 0) { throw 'Android 建置失敗。' }
+        $輸出 = if ($APK) { 'dist/android.apk' } else { 'dist/android-' + [Guid]::NewGuid().ToString('N').Substring(0,8) }
+        & $編譯器 build . --target android -o $輸出
+        if ($LASTEXITCODE) { throw 'Android 建置失敗。' }
     }
-} finally {
-    [Console]::OutputEncoding = $原主控台輸出編碼
-    $OutputEncoding = $原輸出編碼
-    Pop-Location
-}
+} finally { Pop-Location }

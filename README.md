@@ -94,3 +94,18 @@ python -m http.server 8080 --bind 127.0.0.1 --directory web
 ## 授權
 
 本專案採用 [MIT 授權條款](LICENSE)。
+
+
+## Bottle / TOML project
+
+The application is now an `aqua.toml` executable. Physics comes from the independent sibling `Aqua_JoltPhysics` 1.0.0 Bottle library, imported as `/bottles/Aqua_JoltPhysics/main.aqua`. Use an updated Aquarius compiler with ES-module DynamicLibrary support.
+
+```powershell
+aqua bottle install ../Aqua_JoltPhysics --global
+aqua bottle restore --project .
+aqua build . -o marble_run.wasm
+aqua run marble_run.wasm
+aqua build . --target web -o web
+```
+
+Commit `aqua.lock.json`. After the first install, `aqua build . --locked --offline` uses immutable cached package bytes. `建置.ps1` builds through the manifest for web/desktop/Android; source-only compilation does not resolve Bottle dependencies.

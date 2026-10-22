@@ -1,0 +1,12 @@
+manifest_version = 1
+[project]
+name = "AquariusLang_MarbleRun_3D"
+type = "executable"
+version = "1.0.0"
+entry = "main.aqua"
+sources = ["camera.aqua", "config.aqua", "hud.aqua", "input.aqua", "main.aqua", "math3d.aqua", "physics.aqua", "renderer.aqua", "shaders.aqua", "smoke.aqua", "track.aqua"]
+platforms = ["windows", "linux", "web", "android"]
+[dependencies]
+[dependencies.Aqua_JoltPhysics]
+version = "1.0.0"
+path = "../Aqua_JoltPhysics/aqua.toml"

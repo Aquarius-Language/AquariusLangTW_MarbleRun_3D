@@ -1,0 +1,17 @@
+{
+  "Format": 1,
+  "ManifestHash": "f53719fe0b170c6c6a821ef1cce14c0f1fd4ec44f5d47c1d6c59a11ad1acb4dd",
+  "Direct": {
+    "Aqua_JoltPhysics": "aqua_joltphysics/1.0.0"
+  },
+  "Packages": [
+    {
+      "Name": "Aqua_JoltPhysics",
+      "Version": "1.0.0",
+      "Hash": "27842a4e8dde284af831c2b6796389165df3ffa8b9ea4208c9965a5a40a5a29f",
+      "Source": "path:C:\\OfficialProjects\\Aqua_JoltPhysics\\aqua.toml",
+      "Dependencies": {},
+      "Key": "aqua_joltphysics/1.0.0"
+    }
+  ]
+}
