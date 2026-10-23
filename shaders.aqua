@@ -1,39 +1,714 @@
-# wgpu supplies VertexInput/VertexOutput and the processing uniform header.
-# Correct Processing's screen-oriented Y projection for this Y-up world.
-變數 頂點著色器 = "
-@vertex fn vs_main(頂點輸入: VertexInput) -> VertexOutput {
-    var 頂點輸出: VertexOutput;
-    let 世界座標 = processing.model * vec4<f32>(頂點輸入.position, 1.0);
-    var 裁切座標 = processing.projection * processing.view * 世界座標;
-    裁切座標.y = -裁切座標.y;
-    裁切座標.z = (裁切座標.z + 裁切座標.w) * 0.5;
-    頂點輸出.position = 裁切座標;
-    頂點輸出.normal = normalize((processing.model * vec4<f32>(頂點輸入.normal, 0.0)).xyz);
-    頂點輸出.eyePosition = 世界座標.xyz;
-    // Built-in spheres have no UVs; use their local normals for a rolling band.
-    頂點輸出.uv = 頂點輸入.normal.xy;
-    頂點輸出.vertexColor = 頂點輸入.color;
-    return 頂點輸出;
-}";
-變數 片段著色器 = "
-struct UserUniforms { 視點: vec4<f32>, 彈珠模式: f32, 光澤: f32, };
-@group(1) @binding(0) var<uniform> 自訂參數: UserUniforms;
-@fragment fn fs_main(頂點輸入: VertexOutput) -> @location(0) vec4<f32> {
-    let 法線 = normalize(頂點輸入.normal);
-    let 光線方向 = normalize(vec3<f32>(-0.4, 0.85, 0.3));
-    let 視線方向 = normalize(自訂參數.視點.xyz - 頂點輸入.eyePosition);
-    let 半程向量 = normalize(光線方向 + 視線方向);
-    var 基底色彩 = 頂點輸入.vertexColor.rgb;
-    if (自訂參數.彈珠模式 > 0.5) {
-        let 條紋比例 = smoothstep(0.18, 0.24, abs(頂點輸入.uv.y));
-        基底色彩 = mix(vec3<f32>(0.98, 0.95, 0.82), 基底色彩, 條紋比例);
+# WGSL 著色器產生器。主機提供 VertexInput、VertexOutput、processing、surface 與 surfaceSampler。
+# 場景採用 PBR：GGX 直接光、預先濾波的環境反射、球諧漫射、解析箱體陰影與 HDR 後製。
+# 地面陰影來自初始化時繪製的投影遮罩；高架表面的陰影以常數程式碼解析計算。
+變數 繪圖模組 = 匯入("Processing");
+變數 設定模組 = 匯入(目前工作目錄 + "/config.aqua");
+變數 環境模組 = 匯入(目前工作目錄 + "/environment.aqua");
+變數 幾何地面高度 = -2.1d;
+變數 數學模組 = 匯入(目前工作目錄 + "/math3d.aqua");
+變數 文 = 字串;
+# Aquarius 字串不處理跳脫字元，以實際換行組合 WGSL。
+變數 換行 = "
+";
+變數 旋轉向量 = 數學模組.旋轉向量; 變數 內積 = 數學模組.內積;
+
+# ---------------------------------------------------------------- 文字格式
+變數 浮點 = 函式(數值) {
+    變數 文字 = 文.轉文字(數值 * 1.0d);
+    如果 (!文.包含(文字, ".") && !文.包含(文字, "e")) { 文字 = 文字 + ".0"; }
+    回傳 文字;
+};
+變數 向量3 = 函式(向量) { 回傳 "vec3<f32>(" + 浮點(向量[0]) + ", " + 浮點(向量[1]) + ", " + 浮點(向量[2]) + ")"; };
+變數 向量2 = 函式(甲, 乙) { 回傳 "vec2<f32>(" + 浮點(甲) + ", " + 浮點(乙) + ")"; };
+變數 轉線性 = 函式(值) {
+    變數 c = 值 / 255.0d;
+    如果 (c <= 0.04045d) { 回傳 c / 12.92d; }
+    回傳 繪圖模組.次方((c + 0.055d) / 1.055d, 2.4d);
+};
+
+# ---------------------------------------------------------------- 共用常數與函式
+變數 常數程式 = 函式() {
+    變數 片段 = [];
+    片段 = 加入(片段, "const 圓周率: f32 = 3.14159265;" + 換行 );
+    片段 = 加入(片段, "const 太陽方向: vec3<f32> = " + 向量3(數學模組.正規化(環境模組.太陽方向)) + ";" + 換行 );
+    片段 = 加入(片段, "const 太陽照度: vec3<f32> = " + 向量3(環境模組.太陽照度) + ";" + 換行 );
+    片段 = 加入(片段, "const 曝光值: f32 = " + 浮點(設定模組.曝光) + ";" + 換行 );
+    片段 = 加入(片段, "const 環境層級: f32 = " + 浮點(環境模組.反射貼圖層數 - 1) + ";" + 換行 );
+    片段 = 加入(片段, "const 天空範圍: f32 = " + 浮點(環境模組.天空編碼範圍) + ";" + 換行 );
+    片段 = 加入(片段, "const 霧濃度: f32 = " + 浮點(設定模組.霧濃度) + ";" + 換行 );
+    片段 = 加入(片段, "const 軌道半寬: f32 = " + 浮點(設定模組.賽道寬度 / 2.0d) + ";" + 換行 );
+    迴圈 (變數 索引 = 0; 索引 < 9; 索引++) {
+        片段 = 加入(片段, "const 球諧" + 文.轉文字(索引) + ": vec3<f32> = " + 向量3(環境模組.球諧係數[索引]) + ";" + 換行 );
     }
-    let 漫射強度 = max(dot(法線, 光線方向), 0.0);
-    let 邊緣光強度 = pow(1.0 - max(dot(法線, 視線方向), 0.0), 3.0);
-    let 鏡面反射強度 = pow(max(dot(法線, 半程向量), 0.0), 64.0) * 自訂參數.光澤;
-    var 輸出色彩 = 基底色彩 * (0.32 + 0.68*漫射強度) + vec3<f32>(0.9, 0.95, 1.0)*鏡面反射強度;
-    輸出色彩 += vec3<f32>(0.08, 0.18, 0.23)*邊緣光強度;
-    let 霧化比例 = 1.0 - exp(-length(自訂參數.視點.xyz-頂點輸入.eyePosition)*0.008);
-    輸出色彩 = mix(輸出色彩, vec3<f32>(0.047, 0.082, 0.137), 霧化比例);
-    return vec4<f32>(輸出色彩, 頂點輸入.vertexColor.a);
-}";
+    變數 色彩列表 = 設定模組.賽道色彩;
+    迴圈 (變數 索引 = 0; 索引 < 3; 索引++) {
+        變數 c = 色彩列表[索引 - (索引 / 長度(色彩列表)) * 長度(色彩列表)];
+        片段 = 加入(片段, "const 陽極色" + 文.轉文字(索引) + ": vec3<f32> = " + 向量3([轉線性(c[0]), 轉線性(c[1]), 轉線性(c[2])]) + ";" + 換行 );
+    }
+    回傳 文.合併(片段, "");
+};
+
+變數 光照函式 = "
+fn 球諧輻照度(n: vec3<f32>) -> vec3<f32> {
+    let 結果 = 球諧0 * 0.282095 + 球諧1 * (0.488603 * n.y) + 球諧2 * (0.488603 * n.z) + 球諧3 * (0.488603 * n.x)
+        + 球諧4 * (1.092548 * n.x * n.y) + 球諧5 * (1.092548 * n.y * n.z) + 球諧6 * (0.315392 * (3.0 * n.z * n.z - 1.0))
+        + 球諧7 * (1.092548 * n.x * n.z) + 球諧8 * (0.546274 * (n.x * n.x - n.y * n.y));
+    return max(結果, vec3<f32>(0.0));
+}
+fn 菲涅耳(f0: vec3<f32>, 餘弦: f32) -> vec3<f32> {
+    let f = pow(clamp(1.0 - 餘弦, 0.0, 1.0), 5.0);
+    return f0 + (vec3<f32>(1.0) - f0) * f;
+}
+fn 法線分佈(nh: f32, a: f32) -> f32 {
+    let a2 = a * a; let d = nh * nh * (a2 - 1.0) + 1.0;
+    return a2 / max(圓周率 * d * d, 1e-7);
+}
+fn 可見度(nv: f32, nl: f32, a: f32) -> f32 {
+    let a2 = a * a;
+    let 視線項 = nl * sqrt(nv * nv * (1.0 - a2) + a2);
+    let 光線項 = nv * sqrt(nl * nl * (1.0 - a2) + a2);
+    return 0.5 / max(視線項 + 光線項, 1e-5);
+}
+fn 異向分佈(nh: f32, th: f32, bh: f32, at: f32, ab: f32) -> f32 {
+    let d = vec3<f32>(ab * th, at * bh, at * ab * nh);
+    let d2 = dot(d, d); let b2 = at * ab / max(d2, 1e-9);
+    return at * ab * b2 * b2 / 圓周率;
+}
+fn 異向可見度(at: f32, ab: f32, tv: f32, bv: f32, tl: f32, bl: f32, nv: f32, nl: f32) -> f32 {
+    let 視線項 = nl * length(vec3<f32>(at * tv, ab * bv, nv));
+    let 光線項 = nv * length(vec3<f32>(at * tl, ab * bl, nl));
+    return 0.5 / max(視線項 + 光線項, 1e-5);
+}
+// Karis 的行動裝置近似分裂和 BRDF，不需要查表貼圖。
+fn 環境BRDF(f0: vec3<f32>, 粗糙度: f32, nv: f32) -> vec3<f32> {
+    let r = 粗糙度 * vec4<f32>(-1.0, -0.0275, -0.572, 0.022) + vec4<f32>(1.0, 0.0425, 1.04, -0.04);
+    let a004 = min(r.x * r.x, exp2(-9.28 * nv)) * r.x + r.y;
+    let ab = vec2<f32>(-1.04, 1.04) * a004 + r.zw;
+    return f0 * ab.x + ab.y;
+}
+fn 環境色彩(方向: vec3<f32>, 粗糙度: f32) -> vec3<f32> {
+    return textureSampleLevel(環境貼圖, 取樣器, 方向, 粗糙度 * 環境層級).rgb;
+}
+fn 雜湊(p: vec2<f32>) -> f32 {
+    var p3 = fract(vec3<f32>(p.x, p.y, p.x) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+fn 雜訊(p: vec2<f32>) -> f32 {
+    let i = floor(p); let f = fract(p); let u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(雜湊(i), 雜湊(i + vec2<f32>(1.0, 0.0)), u.x), mix(雜湊(i + vec2<f32>(0.0, 1.0)), 雜湊(i + vec2<f32>(1.0, 1.0)), u.x), u.y);
+}
+fn 雜訊一維(x: f32) -> f32 {
+    let i = floor(x); let f = fract(x); let u = f * f * (3.0 - 2.0 * f);
+    return mix(雜湊(vec2<f32>(i, 0.37)), 雜湊(vec2<f32>(i + 1.0, 0.37)), u);
+}
+// 彈珠對其他表面的解析柔和陰影與環境遮蔽（Inigo Quilez）。
+fn 彈珠陰影(p: vec3<f32>) -> f32 {
+    let oc = p - 參數組.彈珠.xyz; let r = 參數組.彈珠.w;
+    let b = dot(oc, 太陽方向);
+    if (b > 0.0) { return 1.0; }
+    let c = dot(oc, oc) - r * r; let h = b * b - c;
+    let d = sqrt(max(0.0, r * r - h)) - r;
+    let t = -b - sqrt(max(h, 0.0));
+    return smoothstep(0.0, 1.0, 2.5 * 9.0 * d / max(t, 1e-4));
+}
+fn 彈珠遮蔽(p: vec3<f32>, n: vec3<f32>) -> f32 {
+    let r = 參數組.彈珠.xyz - p; let l = length(r); let 半徑 = 參數組.彈珠.w;
+    return 1.0 - clamp(dot(n, r) * 半徑 * 半徑 / max(l * l * l, 1e-5), 0.0, 1.0) * 0.85;
+}
+fn 箱體可見度(o: vec3<f32>, 半尺寸: vec3<f32>, 倒數: vec3<f32>) -> f32 {
+    let t1 = (-半尺寸 - o) * 倒數; let t2 = (半尺寸 - o) * 倒數;
+    let 近 = min(t1, t2); let 遠 = max(t1, t2);
+    let 進入 = max(max(max(近.x, 近.y), 近.z), 0.0);
+    let 離開 = min(min(遠.x, 遠.y), 遠.z);
+    return 1.0 - smoothstep(0.0, 0.025 + 進入 * 0.03, 離開 - 進入);
+}
+fn 射線命中(p: vec3<f32>, 中心: vec3<f32>, 半尺寸: vec3<f32>) -> bool {
+    let o = p - 中心;
+    let t1 = (-半尺寸 - o) * 太陽倒數; let t2 = (半尺寸 - o) * 太陽倒數;
+    let 近 = min(t1, t2); let 遠 = max(t1, t2);
+    return min(min(遠.x, 遠.y), 遠.z) > max(max(max(近.x, 近.y), 近.z), 0.0);
+}
+fn 霧化(色彩: vec3<f32>, p: vec3<f32>) -> vec3<f32> {
+    let v = p - 參數組.相機.xyz; let d = length(v); let 方向 = v / max(d, 1e-4);
+    let 霧量 = 1.0 - exp(-d * 霧濃度);
+    if (霧量 < 0.004) { return 色彩; }
+    let 霧色 = 環境色彩(normalize(vec3<f32>(方向.x, max(方向.y, 0.02), 方向.z)), 0.55);
+    return mix(色彩, 霧色, 霧量);
+}
+";
+
+# ---------------------------------------------------------------- 解析陰影產生
+# 地面使用初始化時繪製的投影陰影遮罩；高架表面則以常數程式碼測試檢查門、終點牆與平台（皆為軸對齊箱體），
+# 每座檢查門先測外框，命中才測三個構件。軌道上的護欄陰影在材質中以區域座標解析計算。
+變數 安全倒數 = 函式(數值) {
+    如果 (數值 >= 0 && 數值 < 0.000001d) { 回傳 1000000.0d; }
+    如果 (數值 < 0 && 數值 > -0.000001d) { 回傳 -1000000.0d; }
+    回傳 1.0d / 數值;
+};
+變數 陰影程式 = 函式(遮擋群組, 遮罩範圍) {
+    變數 太陽 = 數學模組.正規化(環境模組.太陽方向);
+    變數 片段 = [];
+    片段 = 加入(片段, "const 太陽倒數: vec3<f32> = " + 向量3([安全倒數(太陽[0]), 安全倒數(太陽[1]), 安全倒數(太陽[2])]) + ";" + 換行);
+    片段 = 加入(片段, "const 遮罩起點: vec2<f32> = " + 向量2(遮罩範圍[0], 遮罩範圍[1]) + ";" + 換行);
+    片段 = 加入(片段, "const 遮罩尺寸: vec2<f32> = " + 向量2(遮罩範圍[2] - 遮罩範圍[0], 遮罩範圍[3] - 遮罩範圍[1]) + ";" + 換行);
+    片段 = 加入(片段, "const 遮罩紋素: vec2<f32> = " + 向量2(1.0d / 遮罩範圍[4], 1.0d / 遮罩範圍[5]) + ";" + 換行);
+    # 每個群組先比對沿太陽方向投影到 y = 0 的矩形（四次比較），落在矩形內才做射線與箱體測試。
+    片段 = 加入(片段, "fn 靜態可見度(p: vec3<f32>) -> f32 {" + 換行 + "    var v = 1.0;" + 換行);
+    片段 = 加入(片段, "    let q = p.xz - 太陽方向.xz * (p.y / 太陽方向.y);" + 換行);
+    迴圈 (變數 i = 0; i < 長度(遮擋群組); i++) {
+        變數 群組 = 遮擋群組[i]; 變數 外框 = 群組["bounds"]; 變數 構件 = 群組["boxes"];
+        變數 範圍 = [100000.0d, 100000.0d, -100000.0d, -100000.0d];
+        迴圈 (變數 k = 0; k < 8; k++) {
+            變數 角 = [外框["h"][0], 外框["h"][1], 外框["h"][2]];
+            如果 (k % 2 == 1) { 角[0] = -角[0]; }
+            如果 ((k / 2) % 2 == 1) { 角[1] = -角[1]; }
+            如果 (k / 4 == 1) { 角[2] = -角[2]; }
+            變數 點 = 數學模組.向量相加(外框["c"], 角);
+            變數 qx = 點[0] - 太陽[0] / 太陽[1] * 點[1]; 變數 qz = 點[2] - 太陽[2] / 太陽[1] * 點[1];
+            範圍 = [繪圖模組.最小值(範圍[0], qx), 繪圖模組.最小值(範圍[1], qz), 繪圖模組.最大值(範圍[2], qx), 繪圖模組.最大值(範圍[3], qz)];
+        }
+        片段 = 加入(片段, "    if (all(q > " + 向量2(範圍[0] - 0.05d, 範圍[1] - 0.05d) + ") && all(q < " + 向量2(範圍[2] + 0.05d, 範圍[3] + 0.05d) + ")) {" + 換行);
+        迴圈 (變數 k = 0; k < 長度(構件); k++) {
+            片段 = 加入(片段, "        v = min(v, 箱體可見度(p - " + 向量3(構件[k]["c"]) + ", " + 向量3(構件[k]["h"]) + ", 太陽倒數));" + 換行);
+        }
+        片段 = 加入(片段, "    }" + 換行);
+    }
+    片段 = 加入(片段, "    return v;" + 換行 + "}" + 換行);
+    回傳 文.合併(片段, "");
+};
+
+# ---------------------------------------------------------------- 場景（材質）著色器
+# 頂點與片段模組各自編譯：統一參數在兩者重複宣告，貼圖只宣告在使用它的片段模組。
+變數 場景統一宣告 = "
+struct UserUniforms { 視投影: mat4x4<f32>, 相機: vec4<f32>, 彈珠: vec4<f32>, 參數: vec4<f32>, };
+@group(1) @binding(0) var<uniform> 參數組: UserUniforms;
+struct 場景輸出 {
+    @builtin(position) 裁切: vec4<f32>, @location(0) 世界: vec3<f32>,
+    @location(1) 法線: vec3<f32>, @location(2) 紋理: vec2<f32>,
+};
+";
+變數 場景貼圖宣告 = "
+@group(2) @binding(0) var 環境貼圖: texture_cube<f32>;
+@group(2) @binding(1) var 混凝土反照率: texture_2d<f32>;
+@group(2) @binding(2) var 混凝土法線: texture_2d<f32>;
+@group(2) @binding(3) var 草地反照率: texture_2d<f32>;
+@group(2) @binding(4) var 草地法線: texture_2d<f32>;
+@group(2) @binding(8) var 取樣器: sampler;
+";
+變數 場景頂點程式 = 函式(遮罩範圍) {
+    回傳 "
+@vertex fn vs_main(輸入: VertexInput) -> 場景輸出 {
+    var 輸出: 場景輸出;
+    var 世界 = 輸入.position; var 法線 = 輸入.normal; var 紋理 = 輸入.texcoord;
+    if (參數組.參數.x < 0.5) {
+        // 地面陰影遮罩以 image() 繪製：由紋理座標換算地面位置。
+        世界 = vec3<f32>(mix(" + 浮點(遮罩範圍[0]) + ", " + 浮點(遮罩範圍[2]) + ", 紋理.x), " + 浮點(幾何地面高度) + ", mix(" + 浮點(遮罩範圍[1]) + ", " + 浮點(遮罩範圍[3]) + ", 紋理.y));
+        法線 = vec3<f32>(0.0, 1.0, 0.0);
+    }
+    輸出.裁切 = 參數組.視投影 * vec4<f32>(世界, 1.0);
+    輸出.世界 = 世界; 輸出.法線 = 法線; 輸出.紋理 = 紋理;
+    return 輸出;
+}
+";
+};
+變數 場景材質 = "
+struct 表面 {
+    反照率: vec3<f32>, 粗糙度: f32, 金屬度: f32, 法線: vec3<f32>, 遮蔽: f32,
+    自發光: vec3<f32>, 異向性: f32, 切線: vec3<f32>, 陰影: f32, 測試遮擋: f32, 清漆: f32,
+};
+struct 導數 { 世界x: vec3<f32>, 世界y: vec3<f32>, 紋理x: vec2<f32>, 紋理y: vec2<f32>, 足跡: f32, };
+// 以螢幕空間導數建立切線框架（Schüler）；t 沿 u，b 沿 v。
+fn 切線框架(n: vec3<f32>, 導: 導數) -> mat3x3<f32> {
+    let 甲 = cross(導.世界y, n); let 乙 = cross(n, 導.世界x);
+    let t = 甲 * 導.紋理x.x + 乙 * 導.紋理y.x;
+    let b = 甲 * 導.紋理x.y + 乙 * 導.紋理y.y;
+    let 倒數 = inverseSqrt(max(max(dot(t, t), dot(b, b)), 1e-20));
+    return mat3x3<f32>(t * 倒數, b * 倒數, n);
+}
+fn 預設表面(n: vec3<f32>, 框架: mat3x3<f32>) -> 表面 {
+    var 結果: 表面;
+    結果.反照率 = vec3<f32>(0.5); 結果.粗糙度 = 0.5; 結果.金屬度 = 0.0; 結果.法線 = n; 結果.遮蔽 = 1.0;
+    結果.自發光 = vec3<f32>(0.0); 結果.異向性 = 0.0; 結果.切線 = 框架[0];
+    結果.陰影 = 1.0; 結果.測試遮擋 = 1.0; 結果.清漆 = 0.0;
+    return 結果;
+}
+// 解碼法線貼圖（OpenGL +Y；貼圖列向下，因此翻轉 v）。
+fn 套用法線(框架: mat3x3<f32>, 貼圖: vec4<f32>, 強度: f32) -> vec3<f32> {
+    let xy = (貼圖.xy * 2.0 - 1.0) * 強度;
+    let z = sqrt(max(1.0 - dot(xy, xy), 0.0));
+    return normalize(框架[0] * xy.x - 框架[1] * xy.y + 框架[2] * z);
+}
+fn 旋轉九十(v: vec2<f32>, 次數: f32) -> vec2<f32> {
+    if (次數 < 0.5) { return v; }
+    if (次數 < 1.5) { return vec2<f32>(-v.y, v.x); }
+    if (次數 < 2.5) { return -v; }
+    return vec2<f32>(v.y, -v.x);
+}
+fn 混凝土取樣(uv: vec2<f32>, gx: vec2<f32>, gy: vec2<f32>, 框架: mat3x3<f32>, 表: ptr<function, 表面>) {
+    let 反照 = textureSampleGrad(混凝土反照率, 取樣器, fract(uv), gx, gy);
+    let 法 = textureSampleGrad(混凝土法線, 取樣器, fract(uv), gx, gy);
+    (*表).反照率 = 反照.rgb; (*表).粗糙度 = 反照.a; (*表).遮蔽 *= mix(1.0, 法.b, 0.8);
+    (*表).法線 = 套用法線(框架, 法, 1.0);
+}
+// 投影陰影遮罩：R 為太陽可見度，G 為結構下方的環境遮蔽；以 8 點 PCF 柔化邊緣。
+fn 地面遮罩(xz: vec2<f32>) -> vec2<f32> {
+    let uv = (xz - 遮罩起點) / 遮罩尺寸;
+    if (uv.x <= 0.0 || uv.y <= 0.0 || uv.x >= 1.0 || uv.y >= 1.0) { return vec2<f32>(1.0); }
+    let r = 遮罩紋素 * 1.25;
+    var 和 = textureSampleLevel(surface, surfaceSampler, uv, 0.0).rg * 2.0;
+    和 += textureSampleLevel(surface, surfaceSampler, uv + r, 0.0).rg;
+    和 += textureSampleLevel(surface, surfaceSampler, uv - r, 0.0).rg;
+    和 += textureSampleLevel(surface, surfaceSampler, uv + vec2<f32>(r.x, -r.y), 0.0).rg;
+    和 += textureSampleLevel(surface, surfaceSampler, uv + vec2<f32>(-r.x, r.y), 0.0).rg;
+    return 和 / 6.0;
+}
+fn 地面表面(p: vec3<f32>, 框架: mat3x3<f32>, 導: 導數, 使用遮罩: bool) -> 表面 {
+    var 表 = 預設表面(框架[2], 框架);
+    let xz = p.xz;
+    表.測試遮擋 = 0.0;
+    if (使用遮罩) { let 遮 = 地面遮罩(xz); 表.陰影 = 遮.x; 表.遮蔽 = 遮.y; }
+    let 基礎遮蔽 = 表.遮蔽;
+    let 外距 = max(abs(xz.x) - 32.0, max(-56.0 - xz.y, xz.y - 40.0));
+    if (外距 < 0.0) {
+        // 4 公尺混凝土鋪面：每塊隨機旋轉與偏移，接縫為深色溝槽。
+        let 格 = floor(xz / 4.0); let 局部 = xz / 4.0 - 格;
+        let h1 = 雜湊(格); let h2 = 雜湊(格 + vec2<f32>(17.3, 5.1)); let h3 = 雜湊(格 + vec2<f32>(3.7, 41.9));
+        let 次數 = floor(h1 * 4.0);
+        let uv = 旋轉九十(局部 - 0.5, 次數) + vec2<f32>(h2, h3);
+        let gx = 旋轉九十(導.世界x.xz / 4.0, 次數); let gy = 旋轉九十(導.世界y.xz / 4.0, 次數);
+        var 磚框 = 框架;
+        let 切 = 旋轉九十(vec2<f32>(1.0, 0.0), 次數); let 副 = 旋轉九十(vec2<f32>(0.0, 1.0), 次數);
+        磚框[0] = vec3<f32>(切.x, 0.0, 切.y); 磚框[1] = vec3<f32>(副.x, 0.0, 副.y);
+        混凝土取樣(uv, gx, gy, 磚框, &表);
+        表.反照率 *= (0.9 + 0.16 * h3) * (0.92 + 0.16 * 雜訊(xz * 0.06));
+        let 邊距 = min(min(局部.x, 1.0 - 局部.x), min(局部.y, 1.0 - 局部.y)) * 4.0;
+        let 接縫 = (1.0 - smoothstep(0.005, 0.01 + 導.足跡, 邊距)) * clamp(0.012 / (0.012 + 導.足跡), 0.0, 1.0);
+        表.反照率 *= 1.0 - 0.45 * 接縫; 表.粗糙度 = mix(表.粗糙度, 1.0, 接縫); 表.遮蔽 *= 1.0 - 0.4 * 接縫;
+    } else if (外距 < 0.5) {
+        // 預鑄路緣石。
+        let uv = xz * 0.5 + vec2<f32>(0.31, 0.77);
+        混凝土取樣(uv, 導.世界x.xz * 0.5, 導.世界y.xz * 0.5, 框架, &表);
+        表.反照率 = 表.反照率 * 1.45 + vec3<f32>(0.03);
+        表.粗糙度 = 表.粗糙度 * 0.85;
+        表.遮蔽 *= 1.0 - 0.45 * (1.0 - smoothstep(0.0, 0.05 + 導.足跡, 外距));
+    } else {
+        // 草地：兩種尺度混合並加入低頻變化，避免看出重複。
+        let uv1 = xz / 15.0; let uv2 = vec2<f32>(xz.y, -xz.x) / 47.0 + vec2<f32>(0.37, 0.11);
+        let wx = 導.世界x.xz; let wy = 導.世界y.xz;
+        let 甲 = textureSampleGrad(草地反照率, 取樣器, fract(uv1), wx / 15.0, wy / 15.0);
+        let 乙 = textureSampleGrad(草地反照率, 取樣器, fract(uv2), vec2<f32>(wx.y, -wx.x) / 47.0, vec2<f32>(wy.y, -wy.x) / 47.0);
+        let 法 = textureSampleGrad(草地法線, 取樣器, fract(uv1), wx / 15.0, wy / 15.0);
+        let 混合 = smoothstep(0.25, 0.75, 雜訊(xz * 0.025));
+        表.反照率 = mix(甲.rgb, 乙.rgb, 混合 * 0.6) * (0.85 + 0.3 * 雜訊(xz * 0.011 + vec2<f32>(7.0, 3.0))) * vec3<f32>(0.82, 1.0, 0.72);
+        表.粗糙度 = mix(甲.a, 乙.a, 0.5);
+        表.遮蔽 = mix(1.0, 法.b, 0.7) * 基礎遮蔽;
+        表.法線 = 套用法線(框架, 法, 0.8);
+    }
+    return 表;
+}
+// 頂面的護欄陰影與接觸遮蔽：v 座標的整數部分記錄護欄半長（0.25 公尺為單位）。
+fn 護欄陰影(u: vec2<f32>, 框架: mat3x3<f32>, 表: ptr<function, 表面>) {
+    let k = floor((u.y + 32.0) / 64.0); let v = u.y - k * 64.0; let 半長 = k * 0.25;
+    let 橫 = u.x - floor((u.x + 8.0) / 16.0) * 16.0;
+    let t = normalize(框架[0]); let b = normalize(框架[1]); let n = 框架[2];
+    let 光 = vec3<f32>(dot(太陽方向, t), dot(太陽方向, n), dot(太陽方向, b));
+    var 可見 = 1.0; var 遮蔽 = 1.0;
+    for (var 側 = -1.0; 側 < 1.5; 側 += 2.0) {
+        let 內面 = 側 * (軌道半寬 + 0.05 - 0.08);
+        let 距離 = (內面 - 橫) * 側;
+        let 範圍內 = 1.0 - smoothstep(半長 - 0.05, 半長 + 0.05, abs(v));
+        遮蔽 *= 1.0 - 0.4 * exp(-max(距離, 0.0) / 0.1) * 範圍內;
+        if (光.x * 側 > 0.001) {
+            let s = 距離 / abs(光.x);
+            let 高 = s * 光.y; let 沿 = v + s * 光.z;
+            let 遮 = (1.0 - smoothstep(0.56, 0.62, 高)) * (1.0 - smoothstep(半長 - 0.04, 半長 + 0.04, abs(沿)));
+            可見 = min(可見, 1.0 - 遮 * step(0.0, s));
+        }
+    }
+    (*表).陰影 = 可見; (*表).遮蔽 *= 遮蔽;
+}
+fn 軌道表面(uv: vec2<f32>, 框架: mat3x3<f32>, 導: 導數, 幾何法線: vec3<f32>) -> 表面 {
+    var 表 = 預設表面(框架[2], 框架);
+    if (幾何法線.y > 0.9) { 護欄陰影(uv, 框架, &表); }
+    let 索引 = floor((uv.x + 8.0) / 16.0); let u = uv.x - 索引 * 16.0;
+    var 底色 = 陽極色0;
+    if (索引 > 1.5) { 底色 = 陽極色2; } else if (索引 > 0.5) { 底色 = 陽極色1; }
+    // 烤漆鋼板加透明清漆：漆面有細微橘皮紋理與使用痕跡，清漆提供銳利的天空反射。
+    let 局部 = vec2<f32>(u, uv.y - floor((uv.y + 32.0) / 64.0) * 64.0);
+    let 足跡 = 導.足跡;
+    let 細 = mix(0.5, 雜訊(局部 * 55.0 + 索引 * 17.0), clamp(1.0 - 足跡 * 40.0, 0.0, 1.0));
+    let 斑 = 雜訊(局部 * vec2<f32>(1.3, 0.35) + 索引 * 5.0);
+    let 中線磨耗 = (1.0 - smoothstep(0.15, 0.9, abs(u))) * 0.5 + 0.5 * 雜訊(局部 * vec2<f32>(6.0, 0.6));
+    let 亮度值 = dot(底色, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let 飽和色 = max(mix(vec3<f32>(亮度值), 底色, 1.3), vec3<f32>(0.0));
+    表.反照率 = 飽和色 * (0.93 + 0.07 * 斑) * (1.0 - 0.05 * 中線磨耗);
+    表.金屬度 = 0.0;
+    表.粗糙度 = clamp(0.4 + 0.08 * 斑 + 0.06 * 細 + 0.08 * 中線磨耗, 0.08, 1.0);
+    表.清漆 = 0.5 - 0.25 * 中線磨耗;
+    let 擾動 = vec2<f32>(雜訊(局部 * 40.0) - 0.5, 雜訊(局部 * 40.0 + 7.0) - 0.5) * 0.04 * clamp(1.0 - 足跡 * 30.0, 0.0, 1.0);
+    表.法線 = normalize(框架[2] + 框架[0] * 擾動.x + 框架[1] * 擾動.y);
+    return 表;
+}
+fn 護欄表面(uv: vec2<f32>, 框架: mat3x3<f32>) -> 表面 {
+    var 表 = 預設表面(框架[2], 框架);
+    let 紋 = 雜訊一維(uv.y * 400.0); let 斑 = 雜訊(uv * vec2<f32>(0.5, 3.0));
+    表.反照率 = vec3<f32>(0.62, 0.63, 0.65) * (0.95 + 0.06 * 紋);
+    表.金屬度 = 1.0; 表.粗糙度 = 0.1 + 0.05 * 紋 + 0.08 * 斑;
+    表.異向性 = 0.35; 表.切線 = 框架[1];
+    return 表;
+}
+fn 混凝土表面(uv: vec2<f32>, 框架: mat3x3<f32>, 導: 導數) -> 表面 {
+    var 表 = 預設表面(框架[2], 框架);
+    let 索引 = floor((uv.x + 8.0) / 16.0); let 局部 = vec2<f32>(uv.x - 索引 * 16.0, uv.y);
+    let 縮放 = 0.5;
+    混凝土取樣(局部 * 縮放 + vec2<f32>(索引 * 0.37, 索引 * 0.61), 導.紋理x * 縮放, 導.紋理y * 縮放, 框架, &表);
+    if (索引 < 0.5) { 表.反照率 = 表.反照率 * vec3<f32>(1.75, 1.7, 1.6); 表.粗糙度 *= 0.9; }
+    else { 表.反照率 = 表.反照率 * vec3<f32>(1.65, 1.65, 1.68); }
+    return 表;
+}
+fn 飾件表面(uv: vec2<f32>, 框架: mat3x3<f32>) -> 表面 {
+    var 表 = 預設表面(框架[2], 框架);
+    let 索引 = floor((uv.x + 8.0) / 16.0);
+    let 下一門 = 參數組.參數.y;
+    let 紋 = 雜訊一維(uv.y * 260.0 + 索引);
+    表.金屬度 = 1.0; 表.異向性 = 0.3; 表.切線 = 框架[1];
+    if (索引 > 6.5) {
+        表.反照率 = vec3<f32>(1.0, 0.72, 0.3); 表.粗糙度 = 0.2 + 0.05 * 紋;
+        表.自發光 = vec3<f32>(1.0, 0.6, 0.2) * 0.35;
+    } else if (索引 < 下一門 - 0.5) {
+        表.反照率 = vec3<f32>(0.12, 0.62, 0.34); 表.粗糙度 = 0.26 + 0.05 * 紋;
+        表.自發光 = vec3<f32>(0.08, 0.55, 0.22) * 0.5;
+    } else if (abs(索引 - 下一門) < 0.5) {
+        let 脈動 = 0.7 + 0.3 * sin(參數組.相機.w * 4.0);
+        表.反照率 = vec3<f32>(1.0, 0.68, 0.22); 表.粗糙度 = 0.22 + 0.05 * 紋;
+        表.自發光 = vec3<f32>(1.0, 0.42, 0.06) * (0.9 * 脈動);
+    } else {
+        表.反照率 = vec3<f32>(0.34, 0.35, 0.38); 表.粗糙度 = 0.3 + 0.06 * 紋;
+    }
+    return 表;
+}
+fn 標線表面(uv: vec2<f32>, 框架: mat3x3<f32>, 導: 導數) -> 表面 {
+    var 表 = 預設表面(框架[2], 框架);
+    let 索引 = floor((uv.x + 8.0) / 16.0); let u = uv.x - 索引 * 16.0;
+    表.粗糙度 = 0.55 + 0.1 * 雜訊(uv * 40.0);
+    if (索引 < 0.5) {
+        表.反照率 = vec3<f32>(0.8);
+    } else {
+        let 格 = floor(vec2<f32>((u + 2.0) / 0.5, (uv.y + 1.0) / 0.5));
+        let 奇偶 = abs(格.x + 格.y - 2.0 * floor((格.x + 格.y) * 0.5));
+        表.反照率 = mix(vec3<f32>(0.025), vec3<f32>(0.8), 奇偶);
+    }
+    return 表;
+}
+fn 著色(p: vec3<f32>, 幾何法線: vec3<f32>, 表: 表面) -> vec3<f32> {
+    let v = normalize(參數組.相機.xyz - p);
+    var n = 表.法線;
+    if (dot(n, v) < 0.0) { n = normalize(n - v * (dot(n, v) - 0.001)); }
+    let nv = clamp(dot(n, v), 1e-4, 1.0);
+    let f0 = mix(vec3<f32>(0.04), 表.反照率, 表.金屬度);
+    let 漫射色 = 表.反照率 * (1.0 - 表.金屬度);
+    let a = max(表.粗糙度 * 表.粗糙度, 0.002);
+    var 直接光 = vec3<f32>(0.0);
+    let nl = dot(n, 太陽方向);
+    if (nl > 0.0 && dot(幾何法線, 太陽方向) > -0.02) {
+        var 可見 = 表.陰影 * 彈珠陰影(p + 幾何法線 * 0.01);
+        if (表.測試遮擋 > 0.5 && 可見 > 0.001 && 參數組.參數.w < 2.5) { 可見 *= 靜態可見度(p + 幾何法線 * 0.02); }
+        if (可見 > 0.001) {
+            let h = normalize(v + 太陽方向);
+            let nh = max(dot(n, h), 0.0); let vh = max(dot(v, h), 0.0);
+            let f = 菲涅耳(f0, vh);
+            var 鏡面: vec3<f32>;
+            if (表.異向性 > 0.01) {
+                let t = normalize(表.切線 - n * dot(表.切線, n)); let b = cross(n, t);
+                let at = max(a * (1.0 + 表.異向性), 0.002); let ab = max(a * (1.0 - 表.異向性), 0.002);
+                鏡面 = f * 異向分佈(nh, dot(t, h), dot(b, h), at, ab)
+                    * 異向可見度(at, ab, dot(t, v), dot(b, v), dot(t, 太陽方向), dot(b, 太陽方向), nv, nl);
+            } else {
+                鏡面 = f * 法線分佈(nh, a) * 可見度(nv, nl, a);
+            }
+            var 清漆光 = vec3<f32>(0.0); var 清漆衰減 = 1.0;
+            if (表.清漆 > 0.01) {
+                let fc = 菲涅耳(vec3<f32>(0.04), vh).x * 表.清漆;
+                清漆光 = vec3<f32>(fc * 法線分佈(nh, 0.04) * 可見度(nv, nl, 0.04));
+                清漆衰減 = 1.0 - fc;
+            }
+            直接光 = ((漫射色 * (vec3<f32>(1.0) - f) / 圓周率 + 鏡面) * 清漆衰減 + 清漆光) * 太陽照度 * (nl * 可見);
+        }
+    }
+    let 遮蔽 = 表.遮蔽 * 彈珠遮蔽(p, n);
+    var r = reflect(-v, n);
+    if (表.異向性 > 0.01) {
+        // 異向反射：沿拉絲方向彎曲反射法線（Revie 近似）。
+        let t = normalize(表.切線 - n * dot(表.切線, n)); let b = cross(n, t);
+        let 異向方向 = cross(t, v);
+        let 彎曲 = normalize(mix(n, cross(異向方向, t), 表.異向性 * clamp(表.粗糙度 * 2.0, 0.0, 1.0) * 0.6));
+        r = reflect(-v, 彎曲);
+    }
+    let 地平 = clamp(1.0 + 1.2 * dot(r, 幾何法線), 0.0, 1.0);
+    let 鏡面遮蔽 = clamp(pow(nv + 遮蔽, exp2(-16.0 * 表.粗糙度 - 1.0)) - 1.0 + 遮蔽, 0.0, 1.0);
+    let 環境鏡面 = 環境色彩(r, 表.粗糙度) * 環境BRDF(f0, 表.粗糙度, nv) * (地平 * 地平 * 鏡面遮蔽);
+    let 環境漫射 = 漫射色 * 球諧輻照度(n) * 遮蔽;
+    var 環境 = 環境漫射 + 環境鏡面;
+    if (表.清漆 > 0.01) {
+        let 清漆反射 = reflect(-v, 幾何法線);
+        let fc = 菲涅耳(vec3<f32>(0.04), max(dot(幾何法線, v), 1e-4)).x * 表.清漆;
+        環境 = 環境 * (1.0 - fc) + 環境色彩(清漆反射, 0.1) * fc * 鏡面遮蔽;
+    }
+    return 直接光 + 環境 + 表.自發光;
+}
+@fragment fn fs_main(輸入: 場景輸出) -> @location(0) vec4<f32> {
+    let p = 輸入.世界;
+    let 幾何法線 = normalize(輸入.法線);
+    var 導: 導數;
+    導.世界x = dpdx(p); 導.世界y = dpdy(p); 導.紋理x = dpdx(輸入.紋理); 導.紋理y = dpdy(輸入.紋理);
+    導.足跡 = length(導.世界x) + length(導.世界y);
+    let 框架 = 切線框架(幾何法線, 導);
+    let 材質 = 參數組.參數.x;
+    var 表: 表面;
+    if (材質 < 0.5) { 表 = 地面表面(p, 框架, 導, true); }
+    else if (材質 < 1.5) { 表 = 軌道表面(輸入.紋理, 框架, 導, 幾何法線); }
+    else if (材質 < 2.5) { 表 = 護欄表面(輸入.紋理, 框架); }
+    else if (材質 < 3.5) { 表 = 混凝土表面(輸入.紋理, 框架, 導); }
+    else if (材質 < 4.5) { 表 = 飾件表面(輸入.紋理, 框架); }
+    else if (材質 < 5.5) { 表 = 標線表面(輸入.紋理, 框架, 導); }
+    else { 表 = 地面表面(p, 框架, 導, false); }
+    let 色彩 = 霧化(著色(p, 幾何法線, 表), p);
+    return vec4<f32>(min(色彩 * 曝光值, vec3<f32>(60000.0)), 1.0);
+}
+";
+
+# ---------------------------------------------------------------- 彈珠（玻璃與內部彩帶）
+變數 彈珠統一宣告 = "
+struct UserUniforms { 視投影: mat4x4<f32>, 相機: vec4<f32>, 彈珠: vec4<f32>, 參數: vec4<f32>, 旋轉: mat4x4<f32>, };
+@group(1) @binding(0) var<uniform> 參數組: UserUniforms;
+struct 彈珠頂點輸出 { @builtin(position) 裁切: vec4<f32>, @location(0) 世界: vec3<f32>, };
+";
+變數 環境貼圖宣告 = "
+@group(2) @binding(0) var 環境貼圖: texture_cube<f32>;
+@group(2) @binding(8) var 取樣器: sampler;
+";
+變數 彈珠頂點 = "
+@vertex fn vs_main(輸入: VertexInput) -> 彈珠頂點輸出 {
+    var 輸出: 彈珠頂點輸出;
+    let w = 參數組.彈珠.xyz + 輸入.position * (參數組.彈珠.w * 1.06);
+    輸出.裁切 = 參數組.視投影 * vec4<f32>(w, 1.0); 輸出.世界 = w;
+    return 輸出;
+}
+";
+變數 彈珠片段 = "
+struct 彈珠片段輸出 { @location(0) 色彩: vec4<f32>, @builtin(frag_depth) 深度: f32, };
+// 內部彩帶：繞區域 y 軸扭轉的兩片交叉薄片（共四片葉）。
+fn 彩帶(q: vec3<f32>) -> vec4<f32> {
+    let 半徑 = length(q);
+    if (半徑 > 0.8) { return vec4<f32>(0.0); }
+    var 色 = vec3<f32>(0.0); var 密度 = 0.0;
+    let 扭轉 = q.y * 2.4;
+    for (var i = 0; i < 2; i++) {
+        let 角 = f32(i) * 1.5707963 + 扭轉;
+        let d = abs(-q.x * sin(角) + q.z * cos(角));
+        let 厚 = 0.055 * (1.0 - 半徑 * 0.55);
+        let m = 1.0 - smoothstep(厚 * 0.55, 厚, d);
+        let 邊 = smoothstep(厚 * 0.35, 厚 * 0.8, d) * m;
+        var 本色 = vec3<f32>(0.95, 0.28, 0.08);
+        if (i == 1) { 本色 = vec3<f32>(1.0, 0.55, 0.12); }
+        色 += m * mix(本色, vec3<f32>(1.0, 0.93, 0.8), 邊 * 0.8);
+        密度 += m;
+    }
+    let 核心 = 1.0 - smoothstep(0.05, 0.12, 半徑);
+    色 += 核心 * vec3<f32>(1.0, 0.85, 0.6); 密度 += 核心;
+    return vec4<f32>(色 / max(密度, 1e-4), min(密度, 1.0));
+}
+@fragment fn fs_main(輸入: 彈珠頂點輸出, @builtin(front_facing) 正面: bool) -> 彈珠片段輸出 {
+    let ro = 參數組.相機.xyz; let rd = normalize(輸入.世界 - ro);
+    let 中心 = 參數組.彈珠.xyz; let 半徑 = 參數組.彈珠.w;
+    let oc = ro - 中心; let b = dot(oc, rd); let c = dot(oc, oc) - 半徑 * 半徑; let h = b * b - c;
+    if (h < 0.0 || !正面) { discard; }
+    let t = -b - sqrt(h);
+    let P = ro + rd * t; let N = (P - 中心) / 半徑; let V = -rd;
+    let nv = clamp(dot(N, V), 0.0, 1.0);
+    let 旋轉 = mat3x3<f32>(參數組.旋轉[0].xyz, 參數組.旋轉[1].xyz, 參數組.旋轉[2].xyz);
+    let 逆旋轉 = transpose(旋轉);
+    let 可見 = 靜態可見度(P + N * 0.02);
+    // 外層玻璃反射與太陽亮點。
+    let F = 菲涅耳(vec3<f32>(0.04), nv).x;
+    let R = reflect(rd, N);
+    var 反射 = 環境色彩(R, 0.0) * clamp(1.0 + R.y * 3.0, 0.25, 1.0);
+    let nl = max(dot(N, 太陽方向), 0.0);
+    let H = normalize(V + 太陽方向);
+    let 亮點 = 法線分佈(max(dot(N, H), 0.0), 0.03) * 可見度(max(nv, 1e-3), nl, 0.03) * nl * 可見;
+    // 折射進入玻璃，沿弦長步進累積內部彩帶。
+    let T = refract(rd, N, 1.0 / 1.5);
+    let 弦長 = max(-2.0 * dot(P - 中心, T), 0.0);
+    let 步數 = select(14, 8, 參數組.參數.w > 1.5);
+    let 步長 = 弦長 / f32(步數);
+    var 累積 = vec3<f32>(0.0); var 穿透 = 1.0;
+    let q0 = 逆旋轉 * (N); let 方向 = 逆旋轉 * T / 半徑;
+    for (var k = 0; k < 步數; k++) {
+        let q = q0 + 方向 * (步長 * (f32(k) + 0.5));
+        let 樣本 = 彩帶(q);
+        if (樣本.a > 0.0) {
+            let 法 = 旋轉 * normalize(q + vec3<f32>(1e-4));
+            let 光 = 球諧輻照度(法) + 太陽照度 * (max(dot(法, 太陽方向), 0.0) * 0.45 * 可見 + 0.08);
+            let 不透明 = 1.0 - exp(-樣本.a * 步長 / 半徑 * 9.0);
+            累積 += 穿透 * 不透明 * 樣本.rgb * 光;
+            穿透 *= 1.0 - 不透明;
+        }
+    }
+    let 出口 = P + T * 弦長; let 出口法線 = (出口 - 中心) / 半徑;
+    var 出射 = refract(T, -出口法線, 1.5);
+    if (dot(出射, 出射) < 0.5) { 出射 = reflect(T, -出口法線); }
+    let 玻璃色 = exp(-vec3<f32>(0.09, 0.03, 0.05) * 弦長 / 半徑 * 2.0);
+    let 背景 = 環境色彩(出射, 0.08) * 玻璃色 * 0.85;
+    var 色彩 = 反射 * F + 太陽照度 * 亮點 * F * 4.0 + (1.0 - F) * (累積 + 穿透 * 背景);
+    色彩 = 霧化(色彩, P);
+    var 輸出: 彈珠片段輸出;
+    let 裁切 = 參數組.視投影 * vec4<f32>(P, 1.0);
+    輸出.深度 = clamp(裁切.z / 裁切.w, 0.0, 1.0);
+    輸出.色彩 = vec4<f32>(min(色彩 * 曝光值, vec3<f32>(60000.0)), 1.0);
+    return 輸出;
+}
+";
+
+# ---------------------------------------------------------------- 天空
+變數 天空統一宣告 = "
+struct UserUniforms { 天空視投影: mat4x4<f32>, 相機: vec4<f32>, };
+@group(1) @binding(0) var<uniform> 參數組: UserUniforms;
+struct 天空輸出 { @builtin(position) 裁切: vec4<f32>, @location(0) 方向: vec3<f32>, };
+";
+變數 天空頂點 = "
+@vertex fn vs_main(輸入: VertexInput) -> 天空輸出 {
+    var 輸出: 天空輸出;
+    var 裁切 = 參數組.天空視投影 * vec4<f32>(輸入.position, 1.0);
+    裁切.z = 裁切.w;
+    輸出.裁切 = 裁切; 輸出.方向 = 輸入.position;
+    return 輸出;
+}
+";
+變數 天空片段 = "
+@group(2) @binding(0) var 環境貼圖: texture_cube<f32>;
+@group(2) @binding(1) var 天空貼圖: texture_2d<f32>;
+@group(2) @binding(8) var 取樣器: sampler;
+@fragment fn fs_main(輸入: 天空輸出) -> @location(0) vec4<f32> {
+    let d = normalize(輸入.方向);
+    let 上 = vec3<f32>(d.x, max(d.y, 0.0), d.z);
+    let 總和 = abs(上.x) + abs(上.y) + abs(上.z);
+    let p = 上.xz / 總和;
+    let uv = vec2<f32>(p.x + p.y, p.x - p.y) * 0.5 + 0.5;
+    let 編碼 = textureSampleLevel(天空貼圖, 取樣器, uv, 0.0);
+    let 天空 = 編碼.rgb * (編碼.a * 天空範圍);
+    let 地平線 = textureSampleLevel(環境貼圖, 取樣器, normalize(vec3<f32>(d.x, 0.02, d.z)), 0.55 * 環境層級).rgb;
+    var 色彩 = mix(地平線, 天空, smoothstep(0.0, 0.06, d.y));
+    let 太陽餘弦 = dot(d, 太陽方向);
+    let 角半徑 = 0.0048;
+    if (太陽餘弦 > cos(角半徑 * 1.5)) {
+        let r = acos(min(太陽餘弦, 1.0)) / 角半徑;
+        let 邊緣 = 1.0 - smoothstep(0.85, 1.15, r);
+        let 臨邊昏暗 = 1.0 - 0.4 * (1.0 - sqrt(max(1.0 - min(r, 1.0) * min(r, 1.0), 0.0)));
+        色彩 += min(太陽照度 / (圓周率 * 角半徑 * 角半徑), vec3<f32>(1500.0)) * (邊緣 * 臨邊昏暗);
+    }
+    return vec4<f32>(色彩 * 曝光值, 1.0);
+}
+";
+
+# ---------------------------------------------------------------- 後製：色調映射、FXAA、光暈
+變數 後製頂點 = "
+struct 後製輸出 { @builtin(position) 裁切: vec4<f32>, @location(0) uv: vec2<f32>, };
+@vertex fn vs_main(輸入: VertexInput) -> 後製輸出 {
+    var 輸出: 後製輸出;
+    var 裁切 = processing.projection * processing.view * processing.model * vec4<f32>(輸入.position, 1.0);
+    裁切.z = (裁切.z + 裁切.w) * 0.5;
+    輸出.裁切 = 裁切; 輸出.uv = 輸入.texcoord;
+    return 輸出;
+}
+";
+變數 合成程式 = "
+struct UserUniforms { 紋素: vec4<f32>, 後製: vec4<f32>, };
+@group(1) @binding(0) var<uniform> 參數組: UserUniforms;
+// ACES 擬合（Stephen Hill），再轉為 sRGB。
+fn 色調映射(c: vec3<f32>) -> vec3<f32> {
+    let 輸入矩陣 = mat3x3<f32>(vec3<f32>(0.59719, 0.07600, 0.02840), vec3<f32>(0.35458, 0.90834, 0.13383), vec3<f32>(0.04823, 0.01566, 0.83777));
+    let 輸出矩陣 = mat3x3<f32>(vec3<f32>(1.60475, -0.10208, -0.00327), vec3<f32>(-0.53108, 1.10813, -0.07276), vec3<f32>(-0.07367, -0.00605, 1.07602));
+    let v = 輸入矩陣 * max(c, vec3<f32>(0.0));
+    let a = v * (v + 0.0245786) - 0.000090537;
+    let b = v * (0.983729 * v + 0.4329510) + 0.238081;
+    let x = clamp(輸出矩陣 * (a / b), vec3<f32>(0.0), vec3<f32>(1.0));
+    return select(x * 12.92, 1.055 * pow(x, vec3<f32>(1.0 / 2.4)) - 0.055, x > vec3<f32>(0.0031308));
+}
+fn 取樣(uv: vec2<f32>) -> vec3<f32> { return textureSampleLevel(surface, surfaceSampler, uv, 0.0).rgb; }
+// FXAA 在 HDR 上混合，亮度以簡單的感知壓縮估計，最後只做一次色調映射。
+fn 亮度(c: vec3<f32>) -> f32 { let l = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722)); return sqrt(l / (1.0 + l)); }
+@fragment fn fs_main(輸入: 後製輸出) -> @location(0) vec4<f32> {
+    let uv = 輸入.uv; let 紋 = 參數組.紋素.xy;
+    let 中 = 取樣(uv);
+    var 結果 = 中;
+    if (參數組.後製.y > 0.5) {
+        let l西北 = 亮度(取樣(uv + vec2<f32>(-1.0, -1.0) * 紋)); let l東北 = 亮度(取樣(uv + vec2<f32>(1.0, -1.0) * 紋));
+        let l西南 = 亮度(取樣(uv + vec2<f32>(-1.0, 1.0) * 紋)); let l東南 = 亮度(取樣(uv + vec2<f32>(1.0, 1.0) * 紋));
+        let l中 = 亮度(中);
+        let 最小 = min(l中, min(min(l西北, l東北), min(l西南, l東南)));
+        let 最大 = max(l中, max(max(l西北, l東北), max(l西南, l東南)));
+        if (最大 - 最小 > max(0.03, 最大 * 0.1)) {
+            var 方向 = vec2<f32>(-((l西北 + l東北) - (l西南 + l東南)), (l西北 + l西南) - (l東北 + l東南));
+            let 縮減 = max((l西北 + l東北 + l西南 + l東南) * 0.03125, 1.0 / 128.0);
+            let 倍率 = 1.0 / (min(abs(方向.x), abs(方向.y)) + 縮減);
+            方向 = clamp(方向 * 倍率, vec2<f32>(-8.0), vec2<f32>(8.0)) * 紋;
+            let 甲 = 0.5 * (取樣(uv + 方向 * (1.0 / 3.0 - 0.5)) + 取樣(uv + 方向 * (2.0 / 3.0 - 0.5)));
+            let 乙 = 甲 * 0.5 + 0.25 * (取樣(uv - 方向 * 0.5) + 取樣(uv + 方向 * 0.5));
+            let l乙 = 亮度(乙);
+            結果 = select(乙, 甲, l乙 < 最小 || l乙 > 最大);
+        }
+    }
+    let 偏移 = (uv - 0.5) * vec2<f32>(參數組.紋素.z, 1.0);
+    let 暗角 = mix(1.0, 1.0 - smoothstep(0.35, 1.25, length(偏移) * 1.1), 參數組.後製.x);
+    return vec4<f32>(色調映射(結果 * 暗角), 1.0);
+}
+";
+變數 光暈擷取程式 = "
+struct UserUniforms { 紋素: vec4<f32>, 後製: vec4<f32>, };
+@group(1) @binding(0) var<uniform> 參數組: UserUniforms;
+fn 取(uv: vec2<f32>) -> vec3<f32> { return min(textureSampleLevel(surface, surfaceSampler, uv, 0.0).rgb, vec3<f32>(200.0)); }
+@fragment fn fs_main(輸入: 後製輸出) -> @location(0) vec4<f32> {
+    let uv = 輸入.uv; let d = 參數組.紋素.xy * 2.0;
+    // 13 點降取樣（Jimenez 2014），再以柔和門檻保留高光。
+    let a = 取(uv + d * vec2<f32>(-2.0, -2.0)); let b = 取(uv + d * vec2<f32>(0.0, -2.0)); let c = 取(uv + d * vec2<f32>(2.0, -2.0));
+    let e = 取(uv + d * vec2<f32>(-2.0, 0.0)); let f = 取(uv); let g = 取(uv + d * vec2<f32>(2.0, 0.0));
+    let h = 取(uv + d * vec2<f32>(-2.0, 2.0)); let i = 取(uv + d * vec2<f32>(0.0, 2.0)); let j = 取(uv + d * vec2<f32>(2.0, 2.0));
+    let k = 取(uv + d * vec2<f32>(-1.0, -1.0)); let l = 取(uv + d * vec2<f32>(1.0, -1.0));
+    let m = 取(uv + d * vec2<f32>(-1.0, 1.0)); let n = 取(uv + d * vec2<f32>(1.0, 1.0));
+    let 色 = f * 0.125 + (a + c + h + j) * 0.03125 + (b + e + g + i) * 0.0625 + (k + l + m + n) * 0.125;
+    let 亮 = max(max(色.r, 色.g), 色.b);
+    let 門檻 = 參數組.後製.x; let 膝 = 門檻 * 0.5;
+    let 軟 = clamp(亮 - 門檻 + 膝, 0.0, 2.0 * 膝);
+    let 貢獻 = max(軟 * 軟 / (4.0 * 膝 + 1e-4), 亮 - 門檻) / max(亮, 1e-4);
+    return vec4<f32>(色 * max(貢獻, 0.0), 1.0);
+}
+";
+變數 光暈疊加程式 = "
+struct UserUniforms { 紋素: vec4<f32>, 後製: vec4<f32>, };
+@group(1) @binding(0) var<uniform> 參數組: UserUniforms;
+@fragment fn fs_main(輸入: 後製輸出) -> @location(0) vec4<f32> {
+    let uv = 輸入.uv; let d = 參數組.紋素.xy * 1.5;
+    var 色 = textureSampleLevel(surface, surfaceSampler, uv, 0.0).rgb * 4.0;
+    色 += (textureSampleLevel(surface, surfaceSampler, uv + vec2<f32>(d.x, 0.0), 0.0).rgb + textureSampleLevel(surface, surfaceSampler, uv - vec2<f32>(d.x, 0.0), 0.0).rgb
+        + textureSampleLevel(surface, surfaceSampler, uv + vec2<f32>(0.0, d.y), 0.0).rgb + textureSampleLevel(surface, surfaceSampler, uv - vec2<f32>(0.0, d.y), 0.0).rgb) * 2.0;
+    色 += textureSampleLevel(surface, surfaceSampler, uv + d, 0.0).rgb + textureSampleLevel(surface, surfaceSampler, uv - d, 0.0).rgb
+        + textureSampleLevel(surface, surfaceSampler, uv + vec2<f32>(d.x, -d.y), 0.0).rgb + textureSampleLevel(surface, surfaceSampler, uv + vec2<f32>(-d.x, d.y), 0.0).rgb;
+    let 光暈 = 色 / 16.0 * 參數組.後製.x;
+    return vec4<f32>(光暈 / (vec3<f32>(1.0) + 光暈), 1.0);
+}
+";
+
+# ---------------------------------------------------------------- 對外介面
+# 遮擋群組：[{bounds, boxes}]；遮罩範圍：[x0, z0, x1, z1, 像素寬, 像素高]。
+變數 建立場景著色器 = 函式(遮擋群組, 遮罩範圍) {
+    變數 共用 = 常數程式() + 光照函式 + 陰影程式(遮擋群組, 遮罩範圍);
+    回傳 {
+        "scene": [場景統一宣告 + 場景頂點程式(遮罩範圍), 場景統一宣告 + 場景貼圖宣告 + 共用 + 場景材質],
+        "marble": [彈珠統一宣告 + 彈珠頂點, 彈珠統一宣告 + 環境貼圖宣告 + 共用 + 彈珠片段],
+        "sky": [天空統一宣告 + 天空頂點, 天空統一宣告 + 常數程式() + 天空片段],
+        "composite": [後製頂點, 後製頂點 + 合成程式],
+        "bloomExtract": [後製頂點, 後製頂點 + 光暈擷取程式],
+        "bloomAdd": [後製頂點, 後製頂點 + 光暈疊加程式]
+    };
+};

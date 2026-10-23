@@ -3,3 +3,5 @@
 !preview.png
 *.ppm
 dist/
+tools/.cache/
+__pycache__/
