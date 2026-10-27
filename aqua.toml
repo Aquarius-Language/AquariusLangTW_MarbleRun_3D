@@ -8,7 +8,7 @@ sources = ["camera.aqua", "config.aqua", "environment.aqua", "geometry.aqua", "h
 platforms = ["windows", "linux", "web", "android"]
 [dependencies]
 [dependencies.Aqua_JoltPhysics]
-version = "1.0.0"
+version = "2.0.0"
 path = "../Aqua_JoltPhysics/aqua.toml"
 [[assets]]
 source = "assets"

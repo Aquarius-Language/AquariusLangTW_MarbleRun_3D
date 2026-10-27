@@ -1,17 +1,17 @@
 {
   "Format": 1,
-  "ManifestHash": "62fac952c97d4fb96951ccbfacafb0a905dfd44133903cb6f159591afff673cf",
+  "ManifestHash": "ecc929a9b0e7825502a72ee38da1b62948c873d1a76815b21b4df9220ed7eddd",
   "Direct": {
-    "Aqua_JoltPhysics": "aqua_joltphysics/1.0.0"
+    "Aqua_JoltPhysics": "aqua_joltphysics/2.0.0"
   },
   "Packages": [
     {
       "Name": "Aqua_JoltPhysics",
-      "Version": "1.0.0",
-      "Hash": "27842a4e8dde284af831c2b6796389165df3ffa8b9ea4208c9965a5a40a5a29f",
+      "Version": "2.0.0",
+      "Hash": "c6852ef294e3d74b026be8e50e870b07f0aaf0cc48b7124ab830a43006ecda71",
       "Source": "path:C:\\OfficialProjects\\Aqua_JoltPhysics\\aqua.toml",
       "Dependencies": {},
-      "Key": "aqua_joltphysics/1.0.0"
+      "Key": "aqua_joltphysics/2.0.0"
     }
   ]
 }
